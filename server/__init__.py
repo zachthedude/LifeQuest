@@ -1,0 +1,1 @@
+"""LifeQuest server package."""

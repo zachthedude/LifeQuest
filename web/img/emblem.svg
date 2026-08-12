@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="LifeQuest">
+  <defs>
+    <linearGradient id="e-body" x1="8" y1="4" x2="56" y2="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffd66b"/>
+      <stop offset=".45" stop-color="#ff9d4c"/>
+      <stop offset="1" stop-color="#ff6b8b"/>
+    </linearGradient>
+    <linearGradient id="e-face" x1="20" y1="10" x2="44" y2="40" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff6dd" stop-opacity=".95"/>
+      <stop offset="1" stop-color="#ffd66b" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="e-glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="3" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <g filter="url(#e-glow)">
+    <path d="M32 3 60 32 32 61 4 32Z" fill="url(#e-body)"/>
+    <path d="M32 3 60 32 32 61 4 32Z" fill="url(#e-face)"/>
+    <path d="M32 12 51 32 32 52 13 32Z" fill="#0b0d16" opacity=".22"/>
+    <path d="M32 17 45 32 32 47 19 32Z" fill="#fff3d6" opacity=".92"/>
+    <path d="M32 24 38 32 32 40 26 32Z" fill="#ff7a3d"/>
+  </g>
+</svg>
