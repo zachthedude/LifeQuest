@@ -1,14 +1,15 @@
 # Integrating the shadcn components into LifeQuest
 
-Three components were handed over for integration:
+Four components were handed over for integration:
 
 | Source | Where it lives now |
 |---|---|
 | `cinematic-landing-hero.tsx` | `web/js/views/landing.js` — the cinematic intro |
 | `orbiting-circles-02.tsx` + `particalsphear` | `web/js/components/orbitingCircles.js`, `web/js/components/particleSphere.js` |
 | `limelight-nav.tsx` | `web/js/components/limelightNav.js` — the app's navigation, both bars |
+| `woven-light-hero.tsx` | `web/js/components/wovenLight.js` — the opening page's background |
 
-All three are live. `python run.py`, open <http://127.0.0.1:8770>, and the
+All four are live. `python run.py`, open <http://127.0.0.1:8770>, and the
 opening page is what loads; the limelight nav is the bar on every screen after
 sign-in.
 
@@ -42,7 +43,10 @@ Two further constraints ruled out the original code even as a drop-in:
 So every one of them was **ported**, not pasted: same structure, same
 choreography, same prop names, rebuilt on what this project actually runs.
 `limelight-nav.tsx` adds a fourth blocked dependency to the list —
-`lucide-react` — for exactly the same two reasons.
+`lucide-react` — and `woven-light-hero.tsx` a fifth and sixth, `three` and
+`framer-motion`, for exactly the same two reasons. The woven hero also injects a
+Google Fonts `<link>` on mount, which `style-src 'self'` and `font-src 'self'`
+both refuse; the project has a local display face already.
 
 ### If you do want the shadcn structure
 
@@ -238,6 +242,51 @@ one surface where an unfamiliar icon cannot be hovered.
 
 ---
 
+## 3c. `woven-light-hero.tsx`
+
+Used as a background, so only the canvas was ported — the component's own
+headline, nav and button would have been thrown away on arrival, since the page
+it now sits behind has all three.
+
+**What data/props does it take?** The original takes none; the port takes
+`mountWovenLight(container, { count, hues, saturation, lightness, size, opacity,
+additive, spin, maxDpr, animate })`. Everything has a default, so the call site
+in `opening.js` passes one thing: `animate: motionAllowed()`.
+
+**State management?** None. It owns a WebGL context and a physics buffer, and
+returns `{ destroy, setTheme, painted }` — the view calls `destroy` on teardown
+and `setTheme` when the palette changes.
+
+**Required assets?** None. The knot is generated.
+
+**Responsive behaviour?** The layer is the hero's height and fades out at the
+bottom; the canvas tracks its container. Below 900px the weave drops from 50,000
+particles to 14,000 — the physics is CPU work and a phone is doing it on a
+smaller battery. Under reduced motion it draws one still frame.
+
+Four things differ from the original, each for a reason:
+
+* **Every particle is distinct.** The original indexes 50,000 particles into a
+  ~6,600-vertex geometry with `i % count`, so about seven particles share each
+  position — and since the forces depend only on position, they never separate.
+  Sampling the knot's tube parametrically gives the density the effect is after
+  at the same particle count.
+* **No allocation in the loop.** The React version news up four `THREE.Vector3`
+  per particle per frame: 200,000 objects a frame. The arithmetic here is the
+  same, written flat.
+* **The cursor is un-rotated into model space.** The original tests the pointer
+  against unrotated positions while the mesh spins, so the parting drifts away
+  from the actual cursor.
+* **The palette is the project's**, not `Math.random()` across the full
+  spectrum: cyan → indigo → violet, with gold on a few strands because in this
+  app gold is rare and means XP. `hues: [[0, 1]]` restores the rainbow.
+
+**Where does it belong?** Behind the hero of the opening page — the pre-login
+screen — and nowhere else. It stops before the sections below it, which are
+reading matter.
+
+---
+
 ## 4. How it is wired in
 
 `web/js/main.js`:
@@ -281,7 +330,7 @@ block audio before one, and a page that beeps unprompted deserves the block).
 ## 5. Verification
 
 ```bash
-python tests/browser_e2e.py     # 56 assertions, real clicks in headless Chrome
+python tests/browser_e2e.py     # 63 assertions, real clicks in headless Chrome
 ```
 
 Six of those cover the cinematic itself: the card mounts, the rings build (16

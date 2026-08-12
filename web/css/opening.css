@@ -46,6 +46,40 @@
     linear-gradient(180deg, var(--bg-2) 0%, var(--bg) 62%);
 }
 
+/* The woven light: the hero's background, and only the hero's. It stops before
+   the sections below, which are reading matter and want a quiet ground. */
+.open__woven {
+  position: absolute; inset: 0 0 auto; height: min(100vh, 980px);
+  z-index: 0; pointer-events: none; overflow: hidden;
+  --woven-opacity: .62;
+  /* Only a bottom fade, so the weave dissolves into the page instead of ending
+     at a hard edge. Nothing is masked out of the middle: the knot *is* the
+     middle, and cutting a hole there leaves only its edges — which reads as a
+     smudge rather than as a weave. The headline stays legible on its own
+     terms, through the canvas opacity and its own drop shadow. */
+  -webkit-mask-image: linear-gradient(to bottom, #000 56%, transparent 94%);
+  mask-image: linear-gradient(to bottom, #000 56%, transparent 94%);
+}
+:root[data-theme="light"] .open__woven { --woven-opacity: .42; }
+.woven__canvas {
+  position: absolute; inset: 0; width: 100%; height: 100%; display: block;
+  opacity: 0; transition: opacity 1400ms var(--ease);
+}
+.opening--woven .woven__canvas { opacity: var(--woven-opacity); }
+.open__woven.woven--unavailable .woven__canvas { opacity: 0; }
+/* A scrim between the weave and the copy, in the page's own ground colour. The
+   weave keeps its full density at the edges of the hero, where it is scenery,
+   and is quietened exactly where words are read. Masking the canvas instead
+   would delete the middle of the knot — which is most of the knot. */
+.open__woven::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(52% 34% at 50% 45%,
+                              var(--bg) 0%, color-mix(in srgb, var(--bg) 55%, transparent) 58%,
+                              transparent 78%);
+}
+/* With the weave running, the graph paper is one texture too many. */
+.opening--woven .open__grid { opacity: .45; }
+
 .open__grid {
   position: absolute; inset: 0; z-index: 0; pointer-events: none;
   background-size: 64px 64px;

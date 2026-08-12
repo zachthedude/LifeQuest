@@ -54,7 +54,7 @@ Run the tests:
 
 ```bash
 python tests/run_tests.py      # 71 unit + API + journey tests
-python tests/browser_e2e.py    # 56 assertions driven by real clicks in headless Chrome
+python tests/browser_e2e.py    # 63 assertions driven by real clicks in headless Chrome
 ```
 
 The browser suite signs up, onboards, clicks every nav link, starts a quest and
@@ -178,6 +178,7 @@ web/
     js/views/opening.js   the opening page — first screen for signed-out visitors
     js/views/landing.js   the cinematic intro, one click from the opening page
     js/blob.js            the WebGL orb (noise-displaced icosphere)
+    js/components/wovenLight.js  the woven-light weave behind the opening hero
     js/components/        limelight nav, icons, app background, orbiting circles,
                           particle sphere, theme control
 tests/                    71 tests, including the full journey from the brief
@@ -276,6 +277,28 @@ hovered. The emoji are gone entirely — `js/components/icons.js` draws the nine
 glyphs the bar needs in lucide's idiom (24×24, no fill, 2px round caps,
 `currentColor`), because `lucide-react` needs npm and the CSP forbids fetching
 the same shapes from a CDN.
+
+## The skill tree, as a tree
+
+The data was always a tree — every skill names its parents in `requires`, and
+every skill has a level it becomes reachable at — but the old screen printed four
+rows of cards per domain and threw both away.
+
+It is now drawn literally, in SVG, with height as level:
+
+* **The roots** are level 1, below the ground line.
+* **The trunk** carries the nine level milestones as growth rings, and fills with
+  sap up to the level actually reached.
+* **Three limbs** are the domains. They fork exactly where the real prerequisites
+  fork, because the branch edges *are* the `requires` graph.
+* **The crown** above the last ring is what is left after level 100 — bare until
+  Master of Life is unlocked, which is the honest reading of a curve whose top is
+  years of work away.
+
+Everything at or below your level is grown and in its domain's colour; everything
+above it is bare wood. Buds are focusable and explain themselves in a side panel;
+the per-domain lists are still underneath, so nothing is only available as a
+picture.
 
 ## The reactive orb
 

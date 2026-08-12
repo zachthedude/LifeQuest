@@ -673,6 +673,114 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .verdict--rejected { color: var(--danger); }
 
 /* ------------------------------------------------------------ skilltree -- */
+/* ------------------------------------------------------- the grown tree -- */
+/* Height is level. Anything at or below the level reached is in its domain's
+   colour; anything above it is bare wood. */
+.grow__card { overflow: hidden; }
+.grow__stage {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 300px);
+  gap: clamp(12px, 2vw, 26px); align-items: start;
+}
+.grow { width: 100%; height: auto; display: block; overflow: visible; }
+
+.grow__roots, .grow__branches, .grow__crown { fill: none; }
+.grow__root, .grow__branch, .grow__crownbranch {
+  stroke: var(--border-strong); stroke-width: 2.5; stroke-linecap: round; opacity: .5;
+}
+.grow__root { stroke-dasharray: 3 7; }
+.grow__branch { stroke-width: 3; }
+.grow__branch.is-grown { opacity: 1; stroke: var(--domain-color, var(--accent)); }
+.grow__branch[data-domain="physical"] { --domain-color: var(--physical); }
+.grow__branch[data-domain="academic"] { --domain-color: var(--academic); }
+.grow__branch[data-domain="passion"]  { --domain-color: var(--passion); }
+
+.grow__trunk { fill: var(--surface-3); stroke: var(--border); stroke-width: 1; }
+/* Sap: how far up the trunk this player has actually grown. A flat tint rather
+   than a gradient — at 30px wide a gradient is invisible and needs a <defs>. */
+.grow__trunkfill { fill: color-mix(in srgb, var(--xp) 42%, transparent); }
+.grow__ground line { stroke: var(--border); stroke-width: 1.5; stroke-dasharray: 2 6; }
+.grow__groundlabel, .grow__ringlabel {
+  fill: var(--text-dim); font-size: 12px; font-weight: 800; letter-spacing: .14em;
+  font-family: var(--font);
+}
+.grow__ringname {
+  fill: var(--text-dim); font-size: 13px; font-family: var(--font-display); font-weight: 700;
+}
+.grow__ringline { fill: none; stroke: var(--border-strong); stroke-width: 2; }
+.grow__ring.is-on .grow__ringline { stroke: var(--xp); filter: drop-shadow(0 0 6px var(--xp-glow)); }
+.grow__ring.is-on .grow__ringname { fill: var(--text); }
+.grow__ring.is-on .grow__ringlabel { fill: var(--xp); }
+
+.grow__bud { cursor: pointer; }
+.grow__bud:focus { outline: none; }
+.grow__budglow { fill: var(--domain-color); opacity: 0; transition: opacity var(--dur) var(--ease); }
+.grow__budring {
+  fill: var(--surface-solid); stroke: var(--border-strong); stroke-width: 2.5;
+  transition: stroke var(--dur) var(--ease);
+}
+.grow__budcore { fill: var(--border-strong); transition: fill var(--dur) var(--ease); }
+.grow__budlabel {
+  fill: var(--text-dim); font-size: 13px; font-family: var(--font-display); font-weight: 700;
+  text-anchor: middle;
+}
+.grow__bud[data-domain="physical"] { --domain-color: var(--physical); }
+.grow__bud[data-domain="academic"] { --domain-color: var(--academic); }
+.grow__bud[data-domain="passion"]  { --domain-color: var(--passion); }
+/* Reachable at this level, not yet earned: the bud is coloured but hollow. */
+.grow__bud.is-ready .grow__budring { stroke: var(--domain-color); }
+.grow__bud.is-ready .grow__budcore { fill: var(--domain-color); opacity: .45; }
+.grow__bud.is-ready .grow__budlabel { fill: var(--text-muted); }
+/* Earned: it is open, and it glows. */
+.grow__bud.is-open .grow__budring { stroke: var(--domain-color); stroke-width: 3.5; }
+.grow__bud.is-open .grow__budcore { fill: var(--domain-color); }
+.grow__bud.is-open .grow__budglow { opacity: .22; }
+.grow__bud.is-open .grow__budlabel { fill: var(--text); }
+.grow__bud:hover .grow__budglow, .grow__bud:focus-visible .grow__budglow { opacity: .34; }
+.grow__bud.is-picked .grow__budring { stroke: var(--text); }
+.grow__bud:focus-visible .grow__budring { stroke: var(--accent); stroke-width: 4; }
+
+.grow__crownbranch { stroke-dasharray: 6 8; }
+.grow__crown.is-open .grow__crownbranch {
+  stroke: var(--xp); opacity: .9; stroke-dasharray: none;
+  filter: drop-shadow(0 0 8px var(--xp-glow));
+}
+.grow__crownlabel {
+  fill: var(--text-dim); font-size: 13px; font-weight: 800; letter-spacing: .18em;
+  text-transform: uppercase; font-family: var(--font);
+}
+.grow__crown.is-open .grow__crownlabel { fill: var(--xp); }
+
+.grow__panel {
+  position: sticky; top: calc(var(--topbar-h) + 14px);
+  padding: 16px; border-radius: var(--r-md);
+  background: var(--surface-1); border: 1px solid var(--border);
+}
+.grow__detail[data-domain="physical"] { --domain-color: var(--physical); }
+.grow__detail[data-domain="academic"] { --domain-color: var(--academic); }
+.grow__detail[data-domain="passion"]  { --domain-color: var(--passion); }
+.grow__detailname { font-family: var(--font-display); font-size: 1.05rem; color: var(--domain-color); }
+.grow__effect {
+  margin: 10px 0 0; font-size: 13px; font-weight: 700; color: var(--domain-color);
+}
+.grow__blockers {
+  margin: 10px 0 0; padding-left: 18px; font-size: 13px; color: var(--text-dim);
+  display: grid; gap: 3px;
+}
+.grow__legend { gap: 12px; }
+.grow__key { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); }
+.grow__key i { width: 10px; height: 10px; border-radius: 3px; background: var(--domain-color); }
+.grow__key[data-domain="physical"] { --domain-color: var(--physical); }
+.grow__key[data-domain="academic"] { --domain-color: var(--academic); }
+.grow__key[data-domain="passion"]  { --domain-color: var(--passion); }
+
+@media (max-width: 820px) {
+  .grow__stage { grid-template-columns: minmax(0, 1fr); }
+  .grow__panel { position: static; }
+  /* The labels under each bud are the first thing to go when the drawing is
+     scaled down to a phone — they overlap long before the buds do. */
+  .grow__budlabel { display: none; }
+}
+
 .tree__domain { display: grid; gap: 12px; }
 .tree__tiers { display: grid; grid-template-columns: repeat(auto-fit, minmax(196px, 1fr)); gap: 12px; }
 .node {

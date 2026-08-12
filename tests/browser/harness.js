@@ -129,6 +129,19 @@ async function run() {
   if (openDomains === 'academic,passion,physical') pass('the three domains are named', openDomains);
   else fail('the three domains are named', openDomains || '(none)');
 
+  // The woven light is the opening page's background. It is an enhancement, so
+  // either it painted or the page dropped it — never an empty canvas.
+  const wovenLayer = document.querySelector('.open__woven');
+  const wovenCanvas = document.querySelector('.open__woven .woven__canvas');
+  if (wovenLayer && wovenCanvas && document.querySelector('.opening--woven')) {
+    pass('woven light runs behind the opening hero');
+  } else if (wovenLayer && !wovenCanvas) {
+    pass('woven light degrades to the plain background');
+  } else {
+    fail('woven light runs behind the opening hero',
+      `layer=${!!wovenLayer} canvas=${!!wovenCanvas}`);
+  }
+
   const openSteps = document.querySelectorAll('.open__step').length;
   if (openSteps === 4) pass('the evidence-before-XP loop is spelled out', `${openSteps} steps`);
   else fail('the evidence-before-XP loop is spelled out', `${openSteps} steps`);
@@ -378,6 +391,61 @@ async function run() {
   } else {
     fail('browser back button works', text('#main h1'));
   }
+
+  // ---- 4b. The skill tree, drawn as a tree --------------------------------
+  const treeRendered = nextRender('/skills');
+  await click(document.querySelector('.sidenav .navlink[href="#/skills"]'));
+  await settle(treeRendered);
+
+  const buds = [...document.querySelectorAll('.grow__bud')];
+  if (buds.length === 21) pass('every skill is a bud on the tree', `${buds.length}`);
+  else fail('every skill is a bud on the tree', `${buds.length}`);
+
+  const rings = document.querySelectorAll('.grow__ring').length;
+  if (rings === 9) pass('every milestone is a growth ring', `${rings}`);
+  else fail('every milestone is a growth ring', `${rings}`);
+
+  if (document.querySelector('.grow__roots .grow__root')
+      && document.querySelector('.grow__crown .grow__crownbranch')) {
+    pass('the tree runs from roots to crown');
+  } else {
+    fail('the tree runs from roots to crown');
+  }
+
+  // Height is level: the level-1 foundations must sit below every later skill.
+  const budY = (key) => {
+    const node = document.querySelector(`.grow__bud[data-skill="${key}"]`);
+    const match = node && /translate\([\d.]+ ([\d.]+)\)/.exec(node.getAttribute('transform'));
+    return match ? parseFloat(match[1]) : NaN;
+  };
+  const foundation = budY('phys_foundation');
+  const athlete = budY('phys_athlete');
+  if (foundation > athlete) pass('level 1 sits at the roots, mastery at the top',
+    `${Math.round(foundation)} > ${Math.round(athlete)}`);
+  else fail('level 1 sits at the roots, mastery at the top', `${foundation} vs ${athlete}`);
+
+  // No two buds may overlap, or the drawing is unreadable whatever it means.
+  const spots = buds.map((bud) => {
+    const match = /translate\(([\d.]+) ([\d.]+)\)/.exec(bud.getAttribute('transform'));
+    return match ? { x: parseFloat(match[1]), y: parseFloat(match[2]) } : null;
+  }).filter(Boolean);
+  let collisions = 0;
+  for (let a = 0; a < spots.length; a += 1) {
+    for (let b = a + 1; b < spots.length; b += 1) {
+      if (Math.abs(spots[a].y - spots[b].y) < 40 && Math.abs(spots[a].x - spots[b].x) < 60) {
+        collisions += 1;
+      }
+    }
+  }
+  if (collisions === 0) pass('no two buds overlap');
+  else fail('no two buds overlap', `${collisions} pairs`);
+
+  // Picking a bud has to explain it — that is the whole interaction. Dispatched
+  // rather than `.click()`: SVG elements do not inherit HTMLElement's click().
+  buds[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  await sleep(140);
+  if (document.querySelector('.grow__panel .grow__detail')) pass('picking a bud explains it');
+  else fail('picking a bud explains it');
 
   // ---- 6. The core loop, driven by clicks --------------------------------
   const questsRendered = nextRender('/quests');

@@ -17,7 +17,9 @@
 //     XP, an honest curve — pointed at the audience it is built for: students.
 
 import { themeButton } from '../components/themeControl.js';
+import { mountWovenLight } from '../components/wovenLight.js';
 import { motionAllowed } from '../motion.js';
+import { onThemeChange, resolveTheme } from '../theme.js';
 import { el, rich, whenSized } from '../ui.js';
 
 // The words worth slowing a reader down on, in the same emphasis system the rest
@@ -250,12 +252,38 @@ export function openingView({
     el('span', { text: `LifeQuest — ${MOTTO}` }),
     el('span', { class: 'open__footerdim', text: 'Level 1 → 100 · Evidence before XP' }));
 
+  // The woven light sits behind the hero — the first screen, and the only part
+  // of the page that is mostly empty space to fill. It is decoration with a
+  // pulse, so it is out of the accessibility tree entirely.
+  const woven = el('div', { class: 'open__woven', 'aria-hidden': 'true' });
+
   const node = el('section', {
     class: 'opening', dataset: { opening: 'still' },
   },
+    woven,
     el('div', { class: 'open__grid', 'aria-hidden': 'true' }),
     bar,
     el('div', { class: 'open__body' }, hero, domains, loop, values, closing, footer));
+
+  // -------------------------------------------------------- woven light --
+  // Mounted after layout: a canvas built into a detached, zero-width container
+  // is a 1×1 canvas that never shows anything.
+  whenSized(woven, () => {
+    const weave = mountWovenLight(woven, {
+      animate: motionAllowed(),        // reduced motion gets the still weave
+    });
+    if (!weave || !weave.painted) {
+      // No WebGL, or a first frame that drew nothing: the page was designed to
+      // work without this and keeps its grid and wash.
+      weave?.destroy();
+      return;
+    }
+    node.classList.add('opening--woven');
+    cleanups.push(() => weave.destroy());
+    const stopTheme = onThemeChange((resolved) => weave.setTheme(resolved));
+    cleanups.push(stopTheme);
+    weave.setTheme(resolveTheme());
+  });
 
   // ------------------------------------------------------------- entrance --
   // The hero animates itself in CSS. Everything below the fold lifts as it is
