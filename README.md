@@ -38,6 +38,12 @@ and the view layer; the game engine, AI modules and schema move unchanged.
 
 ---
 
+## Live demo
+
+https://zachthedude.github.io/LifeQuest/ runs the real Python server in your browser
+with Pyodide (`web/js/demo.js`); your save stays in that browser. Rebuild and publish
+with `python tools/build_pages.py --push`.
+
 ## Running it
 
 ```bash
