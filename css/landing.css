@@ -1,0 +1,377 @@
+/* ==========================================================================
+   THE INTRO ACTS — the app mockup and the orbiting-circles constellation, as
+   two sections of the opening page. Built entirely from the tokens in
+   styles.css; loaded alongside it rather than merged into it so the whole
+   intro stays one self-contained thing.
+
+   The `.landing__*` names are lineage, not location: this began as
+   `cinematic-landing-hero.tsx` on a screen of its own — a pinned stage that
+   scrubbed four acts past a fixed viewport, reached from a "Watch the
+   two-minute intro" button. That format is gone. Acts I and IV merged into the
+   opening page's own hero and closing, which already said the same things, and
+   the two acts with artwork of their own became the sections styled here. The
+   stage, the HUD, the act rail and the skip button went with the film; what is
+   left is everything that was inside the card, which is unchanged.
+   ========================================================================== */
+
+/* --------------------------------------------------------------- the acts -- */
+/* What the cinematic became. The film pinned a stage and scrubbed four acts
+   across it; these two are sections of the opening page, scrolled through like
+   everything else on it. Only the frame changed — `.landing__card` and every
+   class inside it below is what the film used, which is why the mockup and the
+   constellation still look like themselves.
+
+   The rule the old file kept still holds: the page is authored here in its
+   finished, readable state, and the scrub in js/components/introActs.js writes
+   the opening pose as inline styles and eases from there. A stalled script, or a
+   reader who asked for reduced motion, still gets both acts laid out and legible. */
+.intro { display: block; }
+.intro__act { padding: clamp(56px, 9vh, 112px) 0 0; }
+.intro__act:first-child {
+  margin-top: clamp(64px, 10vh, 124px);
+  border-top: 1px solid var(--border);
+}
+/* The scrub writes transforms onto these every frame; naming them up front keeps
+   a card full of gradient type off the re-raster path. */
+.intro__act .landing__scene,
+.intro__act .landing__phonestage { will-change: transform, opacity; }
+
+/* -------------------------------------------------------- the deep card --- */
+.landing__cardlayer {
+  position: relative; display: flex; align-items: center; justify-content: center;
+}
+.landing__card {
+  position: relative; width: 100%; overflow: hidden;
+  border-radius: var(--r-xl); padding: clamp(20px, 3vw, 44px);
+  background: linear-gradient(145deg, #182c6e 0%, #0a101d 100%);
+  border: 1px solid rgba(255, 255, 255, .05);
+  box-shadow:
+    0 40px 100px -20px rgba(0, 0, 0, .9), 0 20px 40px -20px rgba(0, 0, 0, .8),
+    inset 0 1px 2px rgba(255, 255, 255, .2), inset 0 -2px 4px rgba(0, 0, 0, .8);
+}
+.landing__sheen {
+  position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: 6;
+  mix-blend-mode: screen;
+  background: radial-gradient(760px circle at var(--mouse-x, 50%) var(--mouse-y, 50%),
+                              rgba(255, 255, 255, .07) 0%, transparent 42%);
+}
+
+.landing__scene { position: relative; }
+/* ------------------------------------------------- act II: the system ----- */
+.landing__scene--system {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: center;
+  gap: clamp(12px, 2.5vw, 40px); padding: clamp(18px, 3vw, 44px);
+  max-width: 1280px; width: 100%; margin: 0 auto;
+  --phone-scale: 1;
+}
+.landing__copy h3 {
+  color: #fff; font-size: clamp(1.25rem, .85rem + 1.4vw, 2.2rem); margin-bottom: 12px;
+}
+.landing__copy p {
+  color: rgba(206, 220, 255, .72); font-size: clamp(13.5px, .5rem + .45vw, 17px);
+  line-height: 1.65; max-width: 44ch; margin: 0;
+}
+.landing__copy b { color: #fff; font-weight: 800; }
+.landing__wordmark { display: flex; justify-content: flex-end; }
+/* On the film's stage the wordmark was art and could ride over the mockup, at up
+   to 7.4rem. In a column it is a heading that has to fit its own third of a
+   grid — and "LIFEQUEST" is one unbreakable word, so anything too big for the
+   column does not wrap, it overflows left across the phone. The ceiling is the
+   width of that column (~300px inside a 1060px page), not the viewport. */
+.landing__wordmark h2 {
+  margin: 0; text-transform: uppercase; font-weight: 800; line-height: .88;
+  letter-spacing: -.055em; font-size: clamp(1.9rem, 4vw, 3.2rem);
+  background: linear-gradient(180deg, #ffffff 0%, #a2a8c6 100%);
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent; -webkit-text-fill-color: transparent;
+  transform: translateZ(0);
+  filter: drop-shadow(0 12px 24px rgba(0, 0, 0, .8));
+}
+
+.landing__phonestage {
+  position: relative; display: grid; place-items: center;
+  height: calc(600px * var(--phone-scale)); perspective: 1000px;
+}
+.landing__phonetilt {
+  transform-style: preserve-3d; will-change: transform;
+  transition: transform 900ms var(--ease);
+}
+
+/* --------------------------------------------------------- phone mockup --- */
+.phone {
+  position: relative; width: 280px; height: 580px; border-radius: 3rem;
+  background-color: #101018; transform: scale(var(--phone-scale, 1));
+  transform-style: preserve-3d;
+  box-shadow:
+    inset 0 0 0 2px #52556b, inset 0 0 0 7px #000,
+    0 40px 80px -15px rgba(0, 0, 0, .9), 0 15px 25px -5px rgba(0, 0, 0, .7);
+}
+.phone__btn {
+  position: absolute; z-index: 0; width: 3px;
+  background: linear-gradient(90deg, #40435a 0%, #17182a 100%);
+  box-shadow: -2px 0 5px rgba(0, 0, 0, .8), inset -1px 0 1px rgba(255, 255, 255, .15);
+}
+.phone__btn--a { top: 120px; left: -3px; height: 25px; border-radius: 4px 0 0 4px; }
+.phone__btn--b { top: 162px; left: -3px; height: 45px; border-radius: 4px 0 0 4px; }
+.phone__btn--c { top: 220px; left: -3px; height: 45px; border-radius: 4px 0 0 4px; }
+.phone__btn--d { top: 172px; right: -3px; height: 70px; border-radius: 0 4px 4px 0; }
+.phone__screen {
+  position: absolute; inset: 7px; border-radius: 2.5rem; overflow: hidden; z-index: 1;
+  background: #050914; color: #fff; box-shadow: inset 0 0 15px rgba(0, 0, 0, 1);
+}
+.phone__glare {
+  position: absolute; inset: 0; z-index: 5; pointer-events: none;
+  background: linear-gradient(110deg, rgba(255, 255, 255, .08) 0%, rgba(255, 255, 255, 0) 45%);
+}
+.phone__island {
+  position: absolute; top: 6px; left: 50%; transform: translateX(-50%); z-index: 7;
+  width: 98px; height: 27px; border-radius: 99px; background: #000;
+  display: flex; align-items: center; justify-content: flex-end; padding-right: 11px;
+  box-shadow: inset 0 -1px 2px rgba(255, 255, 255, .1);
+}
+.phone__island i {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--success);
+  box-shadow: 0 0 8px rgba(92, 227, 154, .85);
+}
+.phone__app {
+  position: relative; height: 100%; display: flex; flex-direction: column; gap: 12px;
+  padding: 46px 17px 26px;
+}
+.phone__widget { will-change: transform, opacity; }
+.phone__head { display: flex; align-items: center; justify-content: space-between; }
+.phone__eyebrow {
+  display: block; font-size: 9px; font-weight: 800; letter-spacing: .2em;
+  text-transform: uppercase; color: rgba(200, 210, 240, .5);
+}
+.phone__title { font-size: 17px; font-family: var(--font-display); letter-spacing: -.02em; }
+.phone__avatar {
+  width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center;
+  background: rgba(255, 255, 255, .05); border: 1px solid rgba(255, 255, 255, .12);
+  color: var(--xp); font-size: 13px; box-shadow: 0 6px 14px rgba(0, 0, 0, .5);
+}
+.phone__dial {
+  position: relative; width: 152px; height: 152px; margin: 2px auto 4px;
+  display: grid; place-items: center;
+  filter: drop-shadow(0 14px 24px rgba(0, 0, 0, .8));
+}
+.phone__dial svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.phone__ringfill { transform: rotate(-90deg); transform-origin: center; }
+.phone__dialtext { display: flex; flex-direction: column; align-items: center; z-index: 1; }
+.phone__count {
+  font-size: 38px; font-weight: 800; letter-spacing: -.045em; line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.phone__diallabel {
+  font-size: 8.5px; font-weight: 800; letter-spacing: .18em; text-transform: uppercase;
+  color: rgba(190, 205, 255, .5); margin-top: 3px;
+}
+.phone__quest {
+  display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 16px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .05), rgba(255, 255, 255, .015));
+  border: 1px solid rgba(255, 255, 255, .05);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, .3), inset 0 1px 1px rgba(255, 255, 255, .06);
+}
+.phone__questicon {
+  width: 34px; height: 34px; flex: none; border-radius: 12px; display: grid; place-items: center;
+  font-size: 14px; background: rgba(63, 208, 201, .16); border: 1px solid rgba(63, 208, 201, .32);
+}
+.phone__quest--academic .phone__questicon {
+  background: var(--academic-soft); border-color: rgba(86, 208, 245, .3);
+}
+.phone__questbody { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.phone__questbody b { font-size: 11px; line-height: 1.25; }
+.phone__queststatus {
+  font-size: 9px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
+  color: rgba(190, 205, 255, .5);
+}
+.phone__questxp { font-size: 10px; font-weight: 800; color: var(--xp); white-space: nowrap; }
+.phone__home {
+  position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
+  width: 108px; height: 4px; border-radius: 99px; background: rgba(255, 255, 255, .22);
+}
+
+/* ------------------------------------------------------- floating badges -- */
+.landing__badge {
+  position: absolute; z-index: 8; display: flex; align-items: center; gap: 12px;
+  padding: 11px 15px; border-radius: 18px; white-space: nowrap;
+  background: linear-gradient(135deg, rgba(255, 255, 255, .09) 0%, rgba(255, 255, 255, .02) 100%);
+  backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, .1), 0 25px 50px -12px rgba(0, 0, 0, .8),
+    inset 0 1px 1px rgba(255, 255, 255, .2);
+  will-change: transform, opacity;
+}
+/* Anchored outside the mockup's own edge rather than by percentage of a column
+   whose width varies: the phone's layout box is 280px, so half of it plus a
+   margin is the distance a badge has to clear to stop sitting on the screen.
+   The timeline owns `transform` on these, so the offsets have to be inset-only. */
+.landing__badge--top { top: 2%; right: calc(50% + 152px); left: auto; }
+.landing__badge--bottom { bottom: 8%; left: calc(50% + 152px); right: auto; }
+.landing__badgeicon {
+  width: 36px; height: 36px; flex: none; border-radius: 50%; display: grid; place-items: center;
+  font-size: 16px; background: rgba(255, 207, 92, .16); border: 1px solid rgba(255, 207, 92, .32);
+}
+.landing__badge b { display: block; font-size: 12.5px; color: #fff; }
+.landing__badgesub { font-size: 11px; color: rgba(190, 205, 255, .55); }
+
+/* --------------------------------------------- act III: the constellation - */
+.landing__scene--orbit {
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  /* The bottom padding keeps the lowest seats clear of the act rail — the rings
+     are anchored to this box's bottom edge, so it doubles as their clearance. */
+  padding: clamp(20px, 3.5vw, 46px) 20px 58px; overflow: hidden;
+}
+.landing__orbitcopy { max-width: 54ch; z-index: 3; }
+.landing__orbitcopy h3 {
+  color: #fff; font-size: clamp(1.3rem, .9rem + 1.7vw, 2.5rem); margin: 8px 0 10px;
+}
+.landing__orbitcopy p {
+  color: rgba(206, 220, 255, .7); font-size: clamp(13.5px, .5rem + .4vw, 16px);
+}
+
+.landing__goals {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 10px 22px;
+  margin: 14px 0 0; padding: 0; list-style: none; z-index: 3;
+}
+.landing__goals li {
+  display: flex; align-items: center; gap: 9px;
+  font-size: clamp(12px, .45rem + .35vw, 14.5px); font-weight: 700;
+  color: rgba(214, 226, 255, .82);
+}
+.landing__goalicon {
+  width: 30px; height: 30px; flex: none; border-radius: 10px;
+  display: grid; place-items: center; font-size: 14px;
+  background: rgba(255, 255, 255, .05); border: 1px solid rgba(255, 255, 255, .10);
+}
+
+/* ==========================================================================
+   ORBITING CIRCLES — rings of system icons around a particle core.
+   Seats rotate around the ring's centre; each icon counter-rotates at the same
+   speed so it never ends up upside down.
+   ========================================================================== */
+.orbit { position: relative; width: 100%; flex: 1; min-height: clamp(230px, 32vw, 430px); }
+.orbit__core {
+  position: absolute; bottom: 0; left: 50%; z-index: 2; pointer-events: none;
+  width: clamp(10rem, 34vw, 23rem); aspect-ratio: 1 / 1;
+  transform: translate(-50%, 50%);
+  display: grid; place-items: center;
+}
+.sphere__canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+
+/* The mark everything turns around. */
+.orbit__logo {
+  position: relative; z-index: 2;
+  width: 48%; height: auto;
+  filter: drop-shadow(0 0 26px var(--xp-glow)) drop-shadow(0 14px 30px rgba(0, 0, 0, .7));
+  animation: orbit-pulse 5.5s var(--ease) infinite;
+}
+@keyframes orbit-pulse {
+  0%, 100% { transform: scale(1); filter: drop-shadow(0 0 22px var(--xp-glow))
+                                          drop-shadow(0 14px 30px rgba(0, 0, 0, .7)); }
+  50%      { transform: scale(1.06); filter: drop-shadow(0 0 40px var(--xp-glow))
+                                             drop-shadow(0 14px 30px rgba(0, 0, 0, .7)); }
+}
+.orbit--still .orbit__logo { animation: none; }
+
+/* Centred: whole rings turning around the mark, rather than the original's
+   half-globe cut off by the bottom edge. Sized in vmin so the widest ring
+   always fits the *shorter* axis -- a wide, short window is the case that
+   would otherwise push the outer seats off screen. */
+.orbit--centred .orbit__ring,
+.orbit--centred .orbit__core {
+  top: 50%; bottom: auto; transform: translate(-50%, -50%);
+}
+.orbit--centred .orbit__core { width: clamp(6rem, 15vmin, 10rem); }
+/* The rings sit *below* the copy, so their diameter has to fit the space that
+   is actually left rather than the whole viewport -- otherwise the outer
+   seats end up behind the act rail. */
+.orbit--centred .orbit__ring--1 { --ring-size: clamp(9rem, 22vmin, 16rem); }
+.orbit--centred .orbit__ring--2 { --ring-size: clamp(13.5rem, 34vmin, 24rem); }
+.orbit--centred .orbit__ring--3 { --ring-size: clamp(18rem, 46vmin, 32rem); }
+.orbit--centred .orbit__ring { --icon: 44px; }
+.orbit--centred { min-height: clamp(240px, 48vmin, 520px); }
+.orbit__ring {
+  position: absolute; bottom: 0; left: 50%; border-radius: 50%;
+  width: var(--ring-size); height: var(--ring-size);
+  border: 1px solid rgba(255, 255, 255, .09);
+  transform: translate(-50%, 50%);
+  --icon: 52px;
+}
+/* Sized so the widest arc sweeps most of the stage rather than sitting in a
+   puddle at the bottom of it — half of each ring is below the fold by design. */
+.orbit__ring--1 { --ring-size: clamp(15rem, 46vw, 35rem); }
+.orbit__ring--2 { --ring-size: clamp(20rem, 62vw, 47rem); }
+.orbit__ring--3 { --ring-size: clamp(25rem, 78vw, 59rem); }
+.orbit__seat {
+  position: absolute; top: 0; left: 50%; width: 0; height: 50%;
+  transform-origin: bottom center; transform: rotate(var(--start-angle));
+  animation: orbit-cw var(--duration) linear infinite;
+}
+.orbit__ring[data-direction="ccw"] .orbit__seat { animation-name: orbit-ccw; }
+.orbit__icon {
+  position: absolute; top: calc(var(--icon) * -.5); left: 0;
+  margin-left: calc(var(--icon) * -.5);
+  width: var(--icon); height: var(--icon); display: grid; place-items: center;
+  font-size: calc(var(--icon) * .42); border-radius: 50%;
+  background: rgba(9, 12, 24, .88); border: 1.5px solid var(--border);
+  backdrop-filter: blur(8px); box-shadow: 0 10px 24px -8px rgba(0, 0, 0, .9);
+  transform: rotate(var(--counter-offset));
+  animation: orbit-counter-cw var(--duration) linear infinite;
+}
+.orbit__ring[data-direction="ccw"] .orbit__icon { animation-name: orbit-counter-ccw; }
+.orbit__icon--physical { border-color: rgba(63, 208, 201, .38); }
+.orbit__icon--academic { border-color: rgba(86, 208, 245, .38); }
+.orbit__icon--passion  { border-color: rgba(189, 133, 255, .38); }
+.orbit__icon--xp       { border-color: rgba(255, 207, 92, .38); }
+.orbit__icon--success  { border-color: rgba(92, 227, 154, .38); }
+.orbit--still .orbit__seat, .orbit--still .orbit__icon { animation: none; }
+
+@keyframes orbit-cw {
+  from { transform: rotate(var(--start-angle)); }
+  to   { transform: rotate(calc(var(--start-angle) + 360deg)); }
+}
+@keyframes orbit-ccw {
+  from { transform: rotate(var(--start-angle)); }
+  to   { transform: rotate(calc(var(--start-angle) - 360deg)); }
+}
+@keyframes orbit-counter-cw {
+  from { transform: rotate(var(--counter-offset)); }
+  to   { transform: rotate(calc(var(--counter-offset) - 360deg)); }
+}
+@keyframes orbit-counter-ccw {
+  from { transform: rotate(var(--counter-offset)); }
+  to   { transform: rotate(calc(var(--counter-offset) + 360deg)); }
+}
+
+/* --------------------------------------------------- landing responsive --- */
+@media (max-height: 820px) {
+  .landing__scene--system { --phone-scale: .82; }
+}
+@media (max-width: 1100px) {
+  .landing__badge { padding: 10px 13px; }
+  .landing__badge--top { right: calc(50% + 122px); }
+  .landing__badge--bottom { left: calc(50% + 122px); }
+}
+@media (max-width: 900px) {
+  /* Wordmark on top, the app in the middle, the argument underneath — the same
+     reordering the React original switches to at this breakpoint. */
+  .landing__scene--system {
+    display: flex; flex-direction: column; justify-content: space-evenly; align-items: center;
+    text-align: center; --phone-scale: .68;
+  }
+  .landing__wordmark { order: 1; justify-content: center; }
+  .landing__phonestage { order: 2; width: 100%; }
+  .landing__copy { order: 3; }
+  .landing__copy p { margin-inline: auto; }
+  /* Stacked layout: the mockup owns the middle, so the badges tuck into the
+     free corners beside it instead of trying to clear its edge. */
+  .landing__badge { padding: 9px 12px; border-radius: 15px; }
+  .landing__badge--top { top: 2%; left: 0; right: auto; }
+  .landing__badge--bottom { bottom: 6%; right: 0; left: auto; }
+  .orbit__ring { --icon: 42px; }
+}
+@media (max-width: 560px) {
+  .landing__scene--system { --phone-scale: .58; }
+  .landing__copy p { display: none; }         /* the headline carries it on a phone */
+  .orbit__ring { --icon: 36px; }
+}

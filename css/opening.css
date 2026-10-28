@@ -1,0 +1,407 @@
+/* ==========================================================================
+   OPENING — the front door (js/views/opening.js).
+
+   A quiet page: one centred hero on a faint grid, then the case for the product
+   in generous whitespace underneath. The cinematic that used to live behind a
+   button at the bottom is now two sections in the middle of it (landing.css),
+   which is the only scroll-driven thing here — and it animates from scroll
+   position onto a layout that is already complete, so the page stays readable
+   with scripting off.
+
+   Built from the tokens in styles.css, with one local set for the things this
+   page invents: the flat wash it sits on, the ink gradient on the display type,
+   and the two door pills. Both palettes are defined here so neither theme
+   inherits the other's contrast.
+   ========================================================================== */
+
+:root {
+  --open-line: rgba(255, 255, 255, .055);       /* the graph-paper grid */
+  --open-wash: rgba(125, 140, 255, .13);        /* the glow above the headline */
+  --open-ink-a: #ffffff;                        /* display type, top of the line */
+  --open-ink-b: rgba(255, 255, 255, .42);       /* ... and by the last word */
+  --open-ink-shadow: rgba(0, 0, 0, .5);
+  /* The primary door inverts the ground: a bright pill on a dark page, the same
+     contrast relationship the reference frame has the other way up. */
+  --open-solid-bg: linear-gradient(180deg, #f4f6ff, #ccd4f4);
+  --open-solid-ink: #0a0f22;
+  --open-solid-shadow: 0 14px 34px -16px rgba(0, 0, 0, .9);
+}
+
+:root[data-theme="light"] {
+  --open-line: rgba(20, 28, 60, .075);
+  --open-wash: rgba(96, 120, 245, .11);
+  --open-ink-a: #0d1430;
+  --open-ink-b: rgba(13, 20, 48, .46);
+  --open-ink-shadow: rgba(20, 28, 60, .18);
+  --open-solid-bg: linear-gradient(180deg, #262e4c, #0e1327);
+  --open-solid-ink: #ffffff;
+  --open-solid-shadow: 0 14px 32px -16px rgba(20, 28, 60, .55);
+}
+
+/* The page paints its own calm ground rather than sitting on the app's drifting
+   colour field — the whole point of this screen is stillness. */
+.opening {
+  position: relative; display: block; isolation: isolate;
+  min-height: 100vh; overflow: clip;
+  background:
+    radial-gradient(78vmax 44vmax at 50% -12%, var(--open-wash), transparent 70%),
+    linear-gradient(180deg, var(--bg-2) 0%, var(--bg) 62%);
+}
+
+/* The woven light: the hero's background, and only the hero's. It stops before
+   the sections below, which are reading matter and want a quiet ground. */
+.open__woven {
+  position: absolute; inset: 0 0 auto; height: min(100vh, 980px);
+  z-index: 0; pointer-events: none; overflow: hidden;
+  --woven-opacity: .62;
+  /* Only a bottom fade, so the weave dissolves into the page instead of ending
+     at a hard edge. Nothing is masked out of the middle: the knot *is* the
+     middle, and cutting a hole there leaves only its edges — which reads as a
+     smudge rather than as a weave. The headline stays legible on its own
+     terms, through the canvas opacity and its own drop shadow. */
+  -webkit-mask-image: linear-gradient(to bottom, #000 56%, transparent 94%);
+  mask-image: linear-gradient(to bottom, #000 56%, transparent 94%);
+}
+:root[data-theme="light"] .open__woven { --woven-opacity: .42; }
+.woven__canvas {
+  position: absolute; inset: 0; width: 100%; height: 100%; display: block;
+  opacity: 0; transition: opacity 1400ms var(--ease);
+}
+.opening--woven .woven__canvas { opacity: var(--woven-opacity); }
+.open__woven.woven--unavailable .woven__canvas { opacity: 0; }
+/* A scrim between the weave and the copy, in the page's own ground colour. The
+   weave keeps its full density at the edges of the hero, where it is scenery,
+   and is quietened exactly where words are read. Masking the canvas instead
+   would delete the middle of the knot — which is most of the knot. */
+.open__woven::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(52% 34% at 50% 45%,
+                              var(--bg) 0%, color-mix(in srgb, var(--bg) 55%, transparent) 58%,
+                              transparent 78%);
+}
+/* With the weave running, the graph paper is one texture too many. */
+.opening--woven .open__grid { opacity: .45; }
+
+.open__grid {
+  position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background-size: 64px 64px;
+  background-image:
+    linear-gradient(to right, var(--open-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--open-line) 1px, transparent 1px);
+  /* Fades the grid out well before the edges, so it reads as texture under the
+     headline rather than as a table drawn over the page. */
+  -webkit-mask-image: radial-gradient(ellipse 62% 46% at 50% 30%, #000 0%, transparent 78%);
+  mask-image: radial-gradient(ellipse 62% 46% at 50% 30%, #000 0%, transparent 78%);
+}
+
+.open__body {
+  position: relative; z-index: 1;
+  max-width: 1060px; margin: 0 auto; padding: 0 clamp(18px, 4vw, 40px);
+}
+
+/* -------------------------------------------------------------------- bar -- */
+.open__bar {
+  position: relative; z-index: 3;
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 15px clamp(16px, 3.4vw, 32px);
+}
+.open__barbrand {
+  display: flex; align-items: center; gap: 9px;
+  font-family: var(--font-display); font-size: 15px; letter-spacing: -.01em;
+}
+.open__barbrand img { filter: drop-shadow(0 4px 14px var(--accent-line)); }
+.open__baractions { display: flex; align-items: center; gap: 10px; }
+.open__barlink {
+  cursor: pointer; padding: 8px 16px; border-radius: 99px;
+  background: transparent; border: 1.5px solid var(--border);
+  color: var(--text-muted); font-family: var(--font-display);
+  font-weight: 700; font-size: 13px;
+  transition: color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease),
+              transform var(--dur-fast) var(--ease);
+}
+.open__barlink:hover {
+  color: var(--text); border-color: var(--border-strong); transform: translateY(-1px);
+}
+.open__barlink:focus-visible, .open__door:focus-visible,
+.open__cue:focus-visible { outline: none; box-shadow: var(--ring); }
+
+/* ------------------------------------------------------------------- hero -- */
+.open__hero {
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  min-height: min(88vh, 900px); justify-content: center;
+  padding: clamp(48px, 9vh, 110px) 0 clamp(52px, 8vh, 104px);
+}
+
+.open__eyebrow {
+  display: flex; align-items: center; gap: 10px; margin: 0 0 clamp(20px, 3.4vh, 34px);
+  font-family: var(--font-display); font-size: 11px; font-weight: 800;
+  letter-spacing: .34em; text-transform: uppercase; color: var(--accent);
+}
+.open__eyebrowdot {
+  width: 4px; height: 4px; border-radius: 50%; background: var(--text-dim); opacity: .7;
+}
+.open__eyebrowfor { color: var(--text-dim); letter-spacing: .24em; }
+
+/* One element, one vertical gradient: full ink at the first word, about half by
+   the last. `translateZ(0)` is load-bearing — WebKit clips gradient text on a
+   composited ancestor without it. */
+.open__headline {
+  margin: 0; max-width: 16ch;
+  font-size: clamp(2.5rem, 1rem + 6.4vw, 5.4rem);
+  line-height: 1.03; letter-spacing: -.038em; font-weight: 800;
+  background: linear-gradient(180deg, var(--open-ink-a) 8%, var(--open-ink-b) 100%);
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent; -webkit-text-fill-color: transparent;
+  transform: translateZ(0);
+  filter: drop-shadow(0 14px 30px var(--open-ink-shadow));
+}
+
+/* Both display lines decrypt, and the gradient on each is clipped to the text of
+   the element itself — so the glyph cells the effect builds have to give up
+   their own fill entirely and let the parent's gradient through them. A cell
+   that painted its own colour would repaint the headline flat. */
+.open__headline .decrypt__layer,
+.open__headline [data-char],
+.open__closinghead .decrypt__layer,
+.open__closinghead [data-char] {
+  background: none;
+  color: transparent; -webkit-text-fill-color: transparent;
+}
+/* A scrambling glyph does paint its own ink, so the boil stays visible against
+   the gradient instead of disappearing into it. */
+.open__headline [data-char][data-state="scramble"],
+.open__closinghead [data-char][data-state="scramble"] {
+  -webkit-text-fill-color: color-mix(in srgb, var(--open-ink-b) 72%, var(--accent));
+}
+
+.open__lede {
+  margin: clamp(18px, 2.6vh, 30px) 0 0; max-width: 52ch;
+  color: var(--text-muted); line-height: 1.62;
+  font-size: clamp(15px, .58rem + .5vw, 18px);
+}
+
+.open__doors {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: center;
+  gap: 12px; margin-top: clamp(26px, 4vh, 42px);
+}
+.open__door {
+  cursor: pointer; padding: 14px 28px; border-radius: 99px;
+  font-family: var(--font-display); font-weight: 700; font-size: 14.5px;
+  border: 1.5px solid transparent;
+  transition: transform var(--dur-fast) var(--spring), box-shadow var(--dur) var(--ease),
+              color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+.open__door--solid {
+  background: var(--open-solid-bg); color: var(--open-solid-ink);
+  box-shadow: var(--open-solid-shadow);
+}
+.open__door--quiet {
+  background: var(--surface-2); color: var(--text);
+  border-color: var(--border); box-shadow: var(--shadow-1);
+}
+.open__door:hover { transform: translateY(-2px); }
+.open__door--solid:hover { box-shadow: 0 18px 40px -16px var(--accent); }
+.open__door--quiet:hover { border-color: var(--border-strong); }
+.open__door:active { transform: translateY(0) scale(.985); }
+
+.open__fineprint {
+  margin: 16px 0 0; font-size: 12.5px; color: var(--text-dim);
+}
+
+/* Three facts, set as numerals so the promise is legible at a glance. */
+.open__facts {
+  list-style: none; display: flex; flex-wrap: wrap; justify-content: center;
+  gap: clamp(22px, 4.4vw, 54px); margin: clamp(34px, 5vh, 56px) 0 0; padding: 0;
+}
+.open__facts li { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.open__facts b {
+  font-family: var(--font-display); font-size: clamp(1.4rem, .8rem + 1vw, 1.9rem);
+  font-weight: 800; letter-spacing: -.02em;
+  background: linear-gradient(120deg, var(--headline-a), var(--headline-b));
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent; -webkit-text-fill-color: transparent;
+}
+.open__facts span {
+  font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.open__cue {
+  display: inline-flex; flex-direction: column; align-items: center; gap: 7px;
+  margin-top: clamp(34px, 6vh, 66px); padding: 6px 12px; cursor: pointer;
+  background: none; border: 0; color: var(--text-dim);
+  font-family: var(--font-display); font-size: 11px; font-weight: 700;
+  letter-spacing: .2em; text-transform: uppercase;
+  transition: color var(--dur-fast) var(--ease);
+}
+.open__cue:hover { color: var(--text-muted); }
+.open__cuearrow { font-size: 12px; animation: open-cue 1.9s var(--ease) infinite; }
+@keyframes open-cue {
+  0%, 100% { transform: translateY(0); opacity: .45; }
+  50%      { transform: translateY(6px); opacity: 1; }
+}
+
+/* --------------------------------------------------------------- sections -- */
+.open__section, .open__closing {
+  padding: clamp(64px, 10vh, 124px) 0;
+  border-top: 1px solid var(--border);
+}
+.open__sectionhead { max-width: 62ch; margin: 0 auto clamp(34px, 5vh, 54px); text-align: center; }
+.open__kicker {
+  margin: 0 0 12px; font-family: var(--font-display); font-size: 11px; font-weight: 800;
+  letter-spacing: .22em; text-transform: uppercase; color: var(--accent);
+}
+.open__sectionhead h2 {
+  font-size: clamp(1.6rem, .9rem + 1.9vw, 2.5rem); letter-spacing: -.03em;
+}
+.open__sectionlede {
+  margin: 14px 0 0; color: var(--text-muted); line-height: 1.62;
+  font-size: clamp(14.5px, .56rem + .35vw, 16.5px);
+}
+
+/* ------------------------------------------------------- the three domains -- */
+.open__cards {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(258px, 1fr));
+  gap: clamp(14px, 1.8vw, 22px);
+}
+.open__card {
+  position: relative; overflow: hidden;
+  display: flex; flex-direction: column; gap: 10px;
+  padding: clamp(20px, 2.2vw, 28px);
+  border-radius: var(--r-lg); background: var(--surface-1);
+  border: 1px solid var(--border); box-shadow: var(--shadow-2);
+  transition: transform var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+/* A hairline of the domain's own colour along the top edge — the same way a
+   quest card is coloured elsewhere in the app. */
+.open__card::before {
+  content: ""; position: absolute; inset: 0 0 auto; height: 2px;
+  background: linear-gradient(90deg, var(--domain-color), transparent 82%);
+}
+.open__card[data-domain="physical"] { --domain-color: var(--physical); }
+.open__card[data-domain="academic"] { --domain-color: var(--academic); }
+.open__card[data-domain="passion"]  { --domain-color: var(--passion); }
+.open__card:hover { transform: translateY(-4px); border-color: var(--domain-color); }
+.open__cardicon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 42px; height: 42px; border-radius: 13px; font-size: 19px;
+  background: color-mix(in srgb, var(--domain-color) 14%, transparent);
+  border: 1.5px solid color-mix(in srgb, var(--domain-color) 38%, transparent);
+}
+.open__card h3 { font-size: 1.12rem; color: var(--domain-color); }
+.open__card p { margin: 0; color: var(--text-muted); font-size: 14.5px; line-height: 1.6; }
+/* Pinned to the bottom of the card so the example lines up across all three
+   even when the descriptions above them wrap to different heights. */
+.open__card .open__example {
+  display: flex; flex-direction: column; gap: 3px; margin: auto 0 0;
+  padding-top: 14px; border-top: 1px dashed var(--border);
+}
+.open__examplelabel {
+  font-size: 10.5px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase;
+  color: var(--text-dim);
+}
+.open__example b { font-family: var(--font-display); font-size: 14.5px; color: var(--text); }
+
+/* ----------------------------------------------------------- the four beats -- */
+/* Two by two rather than `auto-fit`: four beats across a 1060px measure leaves
+   a single orphan on the second row, and the pairs read better anyway. */
+.open__steps {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; grid-template-columns: 1fr;
+  gap: clamp(20px, 3vw, 38px) clamp(24px, 4vw, 56px);
+}
+@media (min-width: 720px) {
+  .open__steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.open__step { display: flex; gap: 16px; align-items: flex-start; }
+.open__stepnum {
+  flex: none; font-family: var(--font-display); font-size: 1.5rem; font-weight: 800;
+  line-height: 1; letter-spacing: -.02em; color: var(--xp); opacity: .85;
+}
+.open__step h3 { font-size: 1.05rem; margin-bottom: 5px; }
+.open__step p { margin: 0; color: var(--text-muted); font-size: 14.5px; line-height: 1.6; }
+
+/* ---------------------------------------------------------------- the values -- */
+.open__values {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: clamp(16px, 2.2vw, 30px);
+}
+.open__value {
+  display: flex; gap: 15px; align-items: flex-start;
+  padding: clamp(18px, 2vw, 24px); border-radius: var(--r-lg);
+  background: var(--surface-1); border: 1px solid var(--border);
+}
+.open__valueicon {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 38px; height: 38px; border-radius: 12px; font-size: 17px;
+  background: var(--accent-soft); border: 1.5px solid var(--accent-line);
+}
+.open__value h3 { font-size: 1.02rem; margin-bottom: 5px; }
+.open__value p { margin: 0; color: var(--text-muted); font-size: 14.5px; line-height: 1.6; }
+
+/* -------------------------------------------------------------- the closing -- */
+.open__closing {
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+}
+.open__mark {
+  width: clamp(46px, 6vw, 64px); height: auto; margin-bottom: 18px;
+  filter: drop-shadow(0 0 24px var(--xp-glow)) drop-shadow(0 10px 22px rgba(0, 0, 0, .45));
+  animation: open-mark 6.5s var(--ease) infinite;
+}
+@keyframes open-mark {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50%      { transform: translateY(-8px) rotate(5deg); }
+}
+.open__closinghead {
+  font-size: clamp(1.9rem, 1rem + 2.6vw, 3.1rem); letter-spacing: -.035em;
+  background: linear-gradient(180deg, var(--open-ink-a) 10%, var(--open-ink-b) 100%);
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent; -webkit-text-fill-color: transparent;
+  transform: translateZ(0);
+}
+.open__closing .open__lede { margin-top: 14px; }
+
+.open__footer {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: 10px; padding: 26px 0 40px; border-top: 1px solid var(--border);
+  font-size: 12.5px; color: var(--text-muted);
+}
+.open__footerdim { color: var(--text-dim); }
+
+/* ----------------------------------------------------------------- motion -- */
+/* The hero writes itself in on load; everything below lifts when reached (the
+   view adds `is-in`). Both end at the same visible state, so the reduced-motion
+   kill switch in styles.css — which collapses durations to nothing — lands on a
+   finished page rather than a blank one. */
+.open__hero > * {
+  animation: open-in 720ms var(--ease) both;
+}
+.open__hero > *:nth-child(2) { animation-delay: 70ms; }
+.open__hero > *:nth-child(3) { animation-delay: 150ms; }
+.open__hero > *:nth-child(4) { animation-delay: 230ms; }
+.open__hero > *:nth-child(5) { animation-delay: 300ms; }
+.open__hero > *:nth-child(6) { animation-delay: 370ms; }
+.open__hero > *:nth-child(7) { animation-delay: 460ms; }
+@keyframes open-in {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.open__reveal { opacity: 0; transform: translateY(20px); }
+.open__reveal.is-in {
+  opacity: 1; transform: none;
+  transition: opacity 680ms var(--ease), transform 680ms var(--ease);
+}
+:root[data-motion="reduced"] .open__reveal { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  .open__reveal { opacity: 1; transform: none; }
+}
+
+/* ------------------------------------------------------------------ narrow -- */
+@media (max-width: 640px) {
+  .open__hero { min-height: auto; padding-top: clamp(36px, 7vh, 64px); }
+  .open__headline { max-width: 18ch; letter-spacing: -.03em; }
+  .open__door { width: 100%; }
+  .open__facts { gap: 20px; }
+  .open__footer { justify-content: center; text-align: center; }
+}

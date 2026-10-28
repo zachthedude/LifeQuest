@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark light">
+  <meta name="description" content="LifeQuest — turn real life into a progression-based RPG.">
+  <title>LifeQuest</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/opening.css">
+  <link rel="stylesheet" href="css/landing.css">
+  <!-- Decides the palette before the first paint, so light mode never flashes
+       black. Must stay above the app module. -->
+  <script type="module" src="js/theme.js"></script>
+  <!-- The emblem itself, so the tab and the app can never drift apart. -->
+  <link rel="icon" type="image/svg+xml" href="img/emblem.svg">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <div id="boot" class="boot">
+    <img class="boot__mark" src="img/emblem.svg" alt="" width="54" height="54">
+    <p class="boot__text">Loading LifeQuest…</p>
+  </div>
+
+  <div id="app" class="app" hidden>
+    <header class="topbar" id="topbar"></header>
+    <nav class="sidenav" id="sidenav" aria-label="Primary"></nav>
+    <main class="main" id="main" tabindex="-1"></main>
+    <nav class="tabbar" id="tabbar" aria-label="Primary mobile"></nav>
+  </div>
+
+  <div class="toasts" id="toasts" role="status" aria-live="polite" aria-atomic="false"></div>
+  <div class="overlay-root" id="overlay-root"></div>
+  <div class="sr-only" id="live-region" role="status" aria-live="assertive"></div>
+
+  <script type="module" src="js/demo.js"></script>
+  <noscript>
+    <p style="padding:2rem;color:#e8eaf2">LifeQuest needs JavaScript enabled to run.</p>
+  </noscript>
+</body>
+</html>
