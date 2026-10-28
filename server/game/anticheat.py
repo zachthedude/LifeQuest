@@ -25,7 +25,6 @@ def proof_digest(payload: dict) -> str:
     """Stable digest of the *substantive* proof text, for duplicate detection."""
     parts = [
         (payload.get("text") or "").strip().lower(),
-        (payload.get("reflection") or "").strip().lower(),
         (payload.get("link") or "").strip().lower(),
     ]
     normalised = re.sub(r"\s+", " ", " ".join(parts)).strip()

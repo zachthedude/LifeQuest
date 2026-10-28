@@ -33,12 +33,55 @@ SLOT_TO_JS = {
 
 
 def js_keys(name: str) -> set[str]:
-    """Top-level keys of a `const NAME = { ... };` object literal in avatar.js."""
+    """Top-level keys of a `const NAME = { ... };` object literal in avatar.js.
+
+    Depth-aware rather than line-anchored. The literals holding drawing code
+    nest objects, arrays and arrow functions several levels deep, and the flat
+    colour tables pack several entries onto one line — so a `^  key:` regex read
+    only the first key on each line and reported the other eleven outfit colours
+    as options the client cannot draw, which it draws perfectly well. A key
+    counts only when it sits at brace depth zero and directly follows the
+    opening brace or a comma, which keeps nested keys — and the `:` of a
+    ternary — out.
+    """
     source = AVATAR_JS.read_text(encoding="utf-8")
     match = re.search(rf"const {name} = {{\n(.*?)\n}};", source, re.S)
     if match is None:
         raise AssertionError(f"{name} object literal not found in avatar.js")
-    return set(re.findall(r"^  ([A-Za-z_][A-Za-z0-9_]*):", match.group(1), re.M))
+    body = match.group(1)
+
+    keys: set[str] = set()
+    depth = 0
+    quote: str | None = None
+    index = 0
+    while index < len(body):
+        char = body[index]
+        if quote is not None:
+            if char == "\\":
+                index += 2
+                continue
+            if char == quote:
+                quote = None
+        elif char in "'\"`":
+            quote = char
+        elif char == "/" and body[index + 1:index + 2] == "/":
+            newline = body.find("\n", index)
+            if newline == -1:
+                break
+            index = newline
+            continue
+        elif char in "{[(":
+            depth += 1
+        elif char in "}])":
+            depth -= 1
+        elif char == ":" and depth == 0:
+            identifier = re.search(r"([A-Za-z_$][A-Za-z0-9_$]*)\s*$", body[:index])
+            if identifier is not None:
+                preceding = body[:identifier.start()].rstrip()
+                if preceding == "" or preceding[-1] in "{,":
+                    keys.add(identifier.group(1))
+        index += 1
+    return keys
 
 
 class CatalogAgreementTests(unittest.TestCase):
@@ -207,7 +250,10 @@ class RankingsApiTests(unittest.TestCase):
         self.client = Client()
         self.name = f"rank{next(_counter)}"
         self.client.signup(self.name)
-        self.client.onboard()
+        # Boards list players by display name. The shared helper onboards everyone
+        # as "Zach", which made every row on the board read the same and left
+        # these tests unable to find the player they had just created.
+        self.client.onboard(displayName=self.name)
         self.user_id = int(db.query_one("SELECT id FROM users WHERE username=?",
                                         (self.name,))["id"])
 
@@ -230,7 +276,7 @@ class RankingsApiTests(unittest.TestCase):
         rival = Client()
         rival_name = f"rank{next(_counter)}"
         rival.signup(rival_name)
-        rival.onboard()
+        rival.onboard(displayName=rival_name)
         rival_id = int(db.query_one("SELECT id FROM users WHERE username=?",
                                     (rival_name,))["id"])
         player.award_xp(rival_id, "academic", 5000, "test:seed")
@@ -246,7 +292,7 @@ class RankingsApiTests(unittest.TestCase):
         hidden = Client()
         hidden_name = f"rank{next(_counter)}"
         hidden.signup(hidden_name)
-        hidden.onboard()
+        hidden.onboard(displayName=hidden_name)
         hidden.patch("/api/player/preferences", {"leaderboard": False})
 
         status, data = self.client.get("/api/rankings")

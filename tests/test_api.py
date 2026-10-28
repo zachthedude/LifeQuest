@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import itertools
+import json
+import re
 import unittest
 
 from helpers import Client, use_temp_database
@@ -194,6 +196,141 @@ class ValidationTests(unittest.TestCase):
 
         response = dispatch(Request(method="GET", path="/../server/config.py", headers={}))
         self.assertNotIn(b"AI_API_KEY", response.body)
+
+
+CODE_RE = re.compile(r"LQ-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}")
+
+
+class PasswordRecoveryTests(unittest.TestCase):
+    """Reset a forgotten password with a single-use code, and nothing else."""
+
+    def setUp(self):
+        security.limiter.reset()
+        self.client = Client()
+        self.name = unique("recover")
+        self.client.signup(self.name, "original-pass-77")
+
+    def recover(self, username, client=None):
+        """Ask for a code and read it back out of the server log.
+
+        The log is where the endpoint actually puts it — there is no mail server
+        and the product never asks for an email address — so reading it from
+        there is exactly the access the person running the server has, and it
+        tests the real path rather than re-minting a code behind the endpoint.
+        """
+        security.limiter.reset()
+        with self.assertLogs("lifequest.api", level="INFO") as captured:
+            status, data = (client or self.client).post(
+                "/api/auth/recover", {"username": username})
+        found = CODE_RE.search("\n".join(captured.output))
+        return status, data, (found.group(0) if found else None)
+
+    def reset(self, username, code, password):
+        security.limiter.reset()
+        return self.client.post("/api/auth/reset", {
+            "username": username, "code": code, "password": password})
+
+    def test_recovery_prints_a_code_for_a_real_account(self):
+        status, data, code = self.recover(self.name)
+        self.assertEqual(status, 200)
+        self.assertIsNotNone(code, "no recovery code reached the server log")
+        self.assertEqual(data["sent"], "server-log")
+
+    def test_recovery_never_says_whether_the_account_exists(self):
+        _, real, _ = self.recover(self.name)
+        security.limiter.reset()
+        # No code is minted for an account that does not exist, so there is
+        # nothing to log — which is itself the thing being asserted.
+        with self.assertNoLogs("lifequest.api", level="WARNING"):
+            status, fake = self.client.post("/api/auth/recover",
+                                            {"username": "nobody-at-all"})
+        self.assertEqual(status, 200)
+        self.assertEqual(real["message"], fake["message"])
+
+    def test_the_code_is_never_returned_to_the_browser(self):
+        _, data, code = self.recover(self.name)
+        self.assertNotIn(code, json.dumps(data))
+
+    def test_only_the_hash_of_a_code_is_stored(self):
+        _, _, code = self.recover(self.name)
+        stored = db.query_one(
+            "SELECT code_hash FROM password_resets ORDER BY created_at DESC")["code_hash"]
+        self.assertNotEqual(stored, code)
+        self.assertEqual(len(stored), 64)
+
+    def test_a_code_resets_the_password_and_signs_every_session_out(self):
+        signed_in = Client()
+        security.limiter.reset()
+        signed_in.post("/api/auth/login",
+                       {"username": self.name, "password": "original-pass-77"})
+        self.assertIsNotNone(signed_in.get("/api/auth/me")[1].get("user"))
+
+        _, _, code = self.recover(self.name)
+        status, data = self.reset(self.name, code, "brand-new-pass-88")
+        self.assertEqual(status, 200, data)
+
+        security.limiter.reset()
+        self.assertEqual(Client().post("/api/auth/login",
+                                       {"username": self.name,
+                                        "password": "original-pass-77"})[0], 401)
+        security.limiter.reset()
+        self.assertEqual(Client().post("/api/auth/login",
+                                       {"username": self.name,
+                                        "password": "brand-new-pass-88"})[0], 200)
+
+        # The session that was already open is not still open: someone resetting
+        # a password may be doing it *because* another browser is signed in.
+        self.assertIsNone(signed_in.get("/api/auth/me")[1].get("user"))
+
+    def test_a_code_works_exactly_once(self):
+        _, _, code = self.recover(self.name)
+        self.assertEqual(self.reset(self.name, code, "first-new-pass-11")[0], 200)
+        status, data = self.reset(self.name, code, "second-new-pass-22")
+        self.assertEqual(status, 400)
+        self.assertEqual(data["error"], "invalid_code")
+
+    def test_a_code_cannot_be_spent_on_another_account(self):
+        victim = unique("recover")
+        security.limiter.reset()
+        Client().signup(victim, "victim-pass-99")
+
+        _, _, code = self.recover(self.name)
+        status, data = self.reset(victim, code, "stolen-pass-33")
+        self.assertEqual(status, 400)
+        self.assertEqual(data["error"], "invalid_code")
+
+        security.limiter.reset()
+        self.assertEqual(Client().post("/api/auth/login",
+                                       {"username": victim,
+                                        "password": "victim-pass-99"})[0], 200)
+
+    def test_an_expired_code_is_refused(self):
+        _, _, code = self.recover(self.name)
+        db.execute("UPDATE password_resets SET expires_at='2000-01-01 00:00:00'")
+        status, data = self.reset(self.name, code, "too-late-pass-44")
+        self.assertEqual(status, 400)
+        self.assertEqual(data["error"], "invalid_code")
+
+    def test_asking_twice_leaves_only_the_newer_code_working(self):
+        _, _, first = self.recover(self.name)
+        _, _, second = self.recover(self.name)
+        self.assertNotEqual(first, second)
+        self.assertEqual(self.reset(self.name, first, "stale-pass-55")[0], 400)
+        self.assertEqual(self.reset(self.name, second, "fresh-pass-66")[0], 200)
+
+    def test_a_reset_still_enforces_the_password_rules(self):
+        _, _, code = self.recover(self.name)
+        status, data = self.reset(self.name, code, "abc")
+        self.assertEqual(status, 400)
+        self.assertEqual(data["error"], "invalid_password")
+        # A rejected password must not burn the code.
+        self.assertEqual(self.reset(self.name, code, "good-enough-pass-77")[0], 200)
+
+    def test_a_made_up_code_is_refused(self):
+        self.recover(self.name)
+        status, data = self.reset(self.name, "LQ-AAAA-BBBB-CCCC", "guessed-pass-88")
+        self.assertEqual(status, 400)
+        self.assertEqual(data["error"], "invalid_code")
 
 
 class RateLimitTests(unittest.TestCase):

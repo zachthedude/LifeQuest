@@ -16,30 +16,31 @@
 
 import { el, svg } from '../ui.js';
 import { mountParticleSphere } from './particleSphere.js';
+import { icon } from './icons.js';
 
 /** The systems a character actually levels up, from the inside out. */
 export const DEFAULT_RINGS = [
   {
     size: 1, duration: 26, direction: 'cw',
     seats: [
-      { glyph: '⚡', label: 'Physical', tone: 'physical', angle: -60 },
-      { glyph: '🧠', label: 'Academic', tone: 'academic', angle: 0 },
-      { glyph: '🔥', label: 'Passion', tone: 'passion', angle: 60 },
+      { glyph: 'bolt', label: 'Physical', tone: 'physical', angle: -60 },
+      { glyph: 'brain', label: 'Academic', tone: 'academic', angle: 0 },
+      { glyph: 'flame', label: 'Passion', tone: 'passion', angle: 60 },
     ],
   },
   {
     size: 2, duration: 34, direction: 'ccw',
     seats: [
-      { glyph: '⚔️', label: 'Quests', tone: 'xp', angle: 0 },
-      { glyph: '🌿', label: 'Skill tree', tone: 'success', angle: -90 },
+      { glyph: 'sword', label: 'Quests', tone: 'xp', angle: 0 },
+      { glyph: 'sprout', label: 'Skill tree', tone: 'success', angle: -90 },
     ],
   },
   {
     size: 3, duration: 44, direction: 'cw',
     seats: [
-      { glyph: '🏆', label: 'Achievements', tone: 'xp', angle: -60 },
-      { glyph: '📈', label: 'Progress', tone: 'academic', angle: 0 },
-      { glyph: '✨', label: 'AI Guide', tone: 'passion', angle: 60 },
+      { glyph: 'trophy', label: 'Achievements', tone: 'xp', angle: -60 },
+      { glyph: 'trending', label: 'Progress', tone: 'academic', angle: 0 },
+      { glyph: 'sparkles', label: 'AI Guide', tone: 'passion', angle: 60 },
     ],
   },
 ];
@@ -71,7 +72,7 @@ export function orbitingCircles({
   // particle field rather than beside it.
   if (logo) {
     core.append(el('img', {
-      class: 'orbit__logo', src: '/img/emblem.svg', alt: '',
+      class: 'orbit__logo', src: 'img/emblem.svg', alt: '',
       width: '128', height: '128', decoding: 'async',
     }));
   }
@@ -101,8 +102,7 @@ export function orbitingCircles({
           el('span', {
             class: `orbit__icon orbit__icon--${seat.tone}`,
             style: { '--counter-offset': `${-seat.angle}deg` },
-            text: seat.glyph,
-          }))));
+          }, icon(seat.glyph, { size: 22 })))));
     }),
 
     // The rings are decoration; this is the content they stand for.

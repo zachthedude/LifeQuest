@@ -7,46 +7,60 @@ from typing import Any, Callable
 from .. import db
 
 
-def _a(key, name, description, requirement, tier="bronze", icon="★") -> dict:
+def _a(key, name, description, requirement, tier="bronze", icon="star",
+       numeral="") -> dict:
+    """One achievement.
+
+    `icon` is a *name* from web/js/components/icons.js, not a character: the
+    client draws the glyph. Emoji looked like a different product on every
+    operating system and could not take the tier colour the tile is built
+    around, which a stroked `currentColor` icon does for free.
+
+    `numeral` is the exception, and only the level achievements have one — a
+    Roman numeral set in the display face says "level 25" better than any
+    picture of a medal could, so those tiles show the numeral and keep the icon
+    only as a fallback.
+    """
     return {"key": key, "name": name, "description": description,
-            "requirement": requirement, "tier": tier, "icon": icon}
+            "requirement": requirement, "tier": tier, "icon": icon,
+            "numeral": numeral}
 
 
 ALL_ACHIEVEMENTS: list[dict] = [
     _a("first_step", "First Step", "Complete your first quest.",
-       "Verify 1 quest", "bronze", "◆"),
+       "Verify 1 quest", "bronze", "check"),
     _a("consistent", "Consistent", "Complete quests seven days in a row.",
-       "7 day streak", "silver", "🔥"),
+       "7 day streak", "silver", "flame"),
     _a("unbroken", "Unbroken", "Thirty consecutive active days.",
-       "30 day streak", "gold", "🔥"),
+       "30 day streak", "gold", "flame"),
     _a("explorer", "Explorer", "Try five different passion categories.",
-       "5 passion paths explored", "silver", "🧭"),
+       "5 passion paths explored", "silver", "compass"),
     _a("thinker", "Thinker", "Complete fifty academic quests.",
-       "50 academic quests", "gold", "🧠"),
+       "50 academic quests", "gold", "brain"),
     _a("athlete", "Athlete", "Complete fifty physical quests.",
-       "50 physical quests", "gold", "⚡"),
+       "50 physical quests", "gold", "bolt"),
     _a("creator", "Creator", "Complete your first major passion project.",
-       "1 milestone or epic passion quest", "silver", "✦"),
+       "1 milestone or epic passion quest", "silver", "sparkles"),
     _a("first_creation", "First Creation", "Finish and document something you built.",
-       "1 milestone passion quest with a document or link", "silver", "🛠"),
+       "1 milestone passion quest with a document or link", "silver", "hammer"),
     _a("balanced", "Balanced", "Keep all three domains meaningfully active.",
-       "All three attributes above 20", "silver", "◈"),
+       "All three attributes above 20", "silver", "scale"),
     _a("equilibrium", "Equilibrium", "All three attributes above 60.",
-       "All three attributes above 60", "gold", "◈"),
+       "All three attributes above 60", "gold", "target"),
     _a("master_builder", "Master Builder", "Complete an entire questline.",
-       "Finish 1 quest chain", "gold", "⚒"),
+       "Finish 1 quest chain", "gold", "layers"),
     _a("deep_work", "Deep Work", "Complete a session of 90 minutes or more.",
-       "1 quest with 90+ recorded minutes", "bronze", "◐"),
+       "1 quest with 90+ recorded minutes", "bronze", "hourglass"),
     _a("scholar", "Scholar", "Reach 60 Academic.",
-       "Academic attribute 60", "gold", "📘"),
+       "Academic attribute 60", "gold", "book"),
     _a("veteran", "Veteran", "Complete one hundred quests.",
-       "100 verified quests", "gold", "❖"),
-    _a("level_10", "Apprentice", "Reach level 10.", "Level 10", "bronze", "X"),
-    _a("level_25", "Adept", "Reach level 25.", "Level 25", "silver", "XXV"),
-    _a("level_50", "Expert", "Reach level 50.", "Level 50", "gold", "L"),
-    _a("level_75", "Elite", "Reach level 75.", "Level 75", "platinum", "LXXV"),
+       "100 verified quests", "gold", "shield"),
+    _a("level_10", "Apprentice", "Reach level 10.", "Level 10", "bronze", "medal", "X"),
+    _a("level_25", "Adept", "Reach level 25.", "Level 25", "silver", "medal", "XXV"),
+    _a("level_50", "Expert", "Reach level 50.", "Level 50", "gold", "medal", "L"),
+    _a("level_75", "Elite", "Reach level 75.", "Level 75", "platinum", "medal", "LXXV"),
     _a("level_100", "Master of Life", "Reach the maximum level.",
-       "Level 100", "platinum", "C"),
+       "Level 100", "platinum", "crown", "C"),
 ]
 
 ACHIEVEMENTS_BY_KEY = {a["key"]: a for a in ALL_ACHIEVEMENTS}

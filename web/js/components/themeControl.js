@@ -6,11 +6,14 @@
 import { savePreferences, state } from '../store.js';
 import { applyTheme, onThemeChange, setTheme, themePreference } from '../theme.js';
 import { el } from '../ui.js';
+import { icon } from './icons.js';
 
+// Glyph names from icons.js. "Auto" is a disc half-filled — the sun and the
+// moon at once, which is what following the OS actually means.
 const OPTIONS = [
-  ['light', '☀', 'Light'],
-  ['dark', '☾', 'Dark'],
-  ['auto', '◐', 'Auto'],
+  ['light', 'sun', 'Light'],
+  ['dark', 'moon', 'Dark'],
+  ['auto', 'halfdisc', 'Auto'],
 ];
 
 const LABEL = Object.fromEntries(OPTIONS.map(([value, , label]) => [value, label]));
@@ -38,7 +41,7 @@ export function themeButton() {
 
   const paint = () => {
     const preference = themePreference();
-    button.textContent = GLYPH[preference];
+    button.replaceChildren(icon(GLYPH[preference], { size: 17 }));
     const next = OPTIONS[(OPTIONS.findIndex(([v]) => v === preference) + 1) % OPTIONS.length][0];
     button.title = `Theme: ${LABEL[preference]} — switch to ${LABEL[next]}`;
     button.setAttribute('aria-label', button.title);
@@ -75,7 +78,8 @@ export function themeChoice() {
       dataset: { value }, 'aria-checked': String(value === themePreference()),
       onClick: () => { chooseTheme(value); paint(); },
     },
-      el('span', { class: 'segmented__glyph', 'aria-hidden': 'true', text: glyph }),
+      el('span', { class: 'segmented__glyph', 'aria-hidden': 'true' },
+        icon(glyph, { size: 16 })),
       el('span', { text: label })));
   }
 

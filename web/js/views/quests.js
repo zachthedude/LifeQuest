@@ -4,7 +4,7 @@ import { api } from '../api.js';
 import { navigate } from '../router.js';
 import { refreshQuests, state } from '../store.js';
 import {
-  chip, el, emptyState, field, formatMinutes, meter, modal, toast,
+  chip, el, emptyState, field, formatMinutes, meter, modal, rich, toast,
 } from '../ui.js';
 import { questCard } from './questCard.js';
 
@@ -22,7 +22,9 @@ export async function questsView({ params }) {
   container.append(el('div', { class: 'page-head' },
     el('div', {},
       el('h1', { text: 'Quests' }),
-      el('p', { text: 'Quests adapt to your level, your interests and how you have been performing.' })),
+      el('p', {}, ...rich(
+        'Quests adapt to your level, your interests and how you have been performing.',
+        [['your level', null], ['how you have been performing', 'strong']]))),
     el('div', { class: 'row' },
       el('button', {
         class: 'btn btn--ghost', text: 'New quest',
@@ -50,12 +52,12 @@ export async function questsView({ params }) {
       }))));
   } else {
     const empties = {
-      open: ['🗺️', 'No open quests', 'Generate a set to get moving again.'],
-      verified: ['🏅', 'No completed quests yet', 'Complete and verify your first quest to see it here.'],
-      submitted: ['📝', 'Nothing awaiting detail', 'Submissions that need more evidence appear here.'],
-      abandoned: ['🍂', 'Nothing abandoned', 'Quests you drop are recorded here — they cost no XP.'],
+      open: ['map', 'No open quests', 'Generate a set to get moving again.'],
+      verified: ['medal', 'No completed quests yet', 'Complete and verify your first quest to see it here.'],
+      submitted: ['note', 'Nothing awaiting detail', 'Submissions that need more evidence appear here.'],
+      abandoned: ['leaf', 'Nothing abandoned', 'Quests you drop are recorded here — they cost no XP.'],
       expired: ['⏳', 'Nothing expired', 'Daily quests expire after 36 hours if untouched.'],
-      all: ['🗺️', 'No quests yet', 'Generate your first set to begin.'],
+      all: ['map', 'No quests yet', 'Generate your first set to begin.'],
     };
     const [mark, title, body] = empties[status] || empties.all;
     container.append(emptyState(mark, title, body, el('button', {

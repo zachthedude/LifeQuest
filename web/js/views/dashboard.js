@@ -5,6 +5,9 @@ import { refreshQuests, state } from '../store.js';
 import { navigate } from '../router.js';
 import { DOMAIN_LABEL, blocks, chip, el, emptyState, formatNumber, meter, rich, toast } from '../ui.js';
 import { questCard } from './questCard.js';
+import { icon } from '../components/icons.js';
+import { deadlineBoard, msUntil } from '../components/flipDisk.js';
+import { motionAllowed } from '../motion.js';
 
 function attributeRow(label, value, variant) {
   return el('div', {},
@@ -31,7 +34,8 @@ export function characterHero(snapshot) {
         el('div', { style: { marginTop: '10px' } }, meter(xp.percent, 'xp')),
         el('div', { class: 'hero__stats' },
           el('div', { class: 'stat' },
-            el('b', { class: 'num', text: `🔥 ${snapshot.streak.current}` }),
+            el('b', { class: 'num' }, icon('flame', { size: 15 }),
+              el('span', { text: String(snapshot.streak.current) })),
             el('span', { text: 'Day streak' })),
           el('div', { class: 'stat' },
             el('b', { class: 'num', text: `${Math.round(snapshot.streak.consistency)}%` }),
@@ -93,11 +97,45 @@ export async function dashboardView() {
       el('a', { class: 'dim', href: '#/quests', text: 'All quests →',
                 style: { fontSize: '13px', textDecoration: 'none' } })));
 
+  // The departure board. `expiresAt` has been on every quest since the first
+  // build and nothing ever displayed it, so a daily quest simply vanished at 36
+  // hours with no warning at any point. One board, for whichever open quest
+  // runs out first — a flip-disk display is the right object for a deadline
+  // that arrives whether or not you are ready for it.
+  const soonest = today
+    .filter((quest) => quest.expiresAt && (msUntil(quest.expiresAt) ?? -1) > 0)
+    .sort((a, b) => msUntil(a.expiresAt) - msUntil(b.expiresAt))[0];
+
+  if (soonest) {
+    const housing = el('div', { class: 'flipboard' },
+      el('div', { class: 'flipboard__label', text: 'Next to expire' }),
+      el('div', { class: 'flipboard__quest', text: soonest.title }));
+    const screen = el('div', { class: 'flipboard__screen' });
+    housing.append(screen);
+    housing.append(el('div', { class: 'flipboard__foot',
+                               text: msUntil(soonest.expiresAt) >= 3600000
+                                 ? 'hours : minutes remaining'
+                                 : 'minutes : seconds remaining' }));
+
+    // The board owns a timer, so it has to be torn down when the screen goes.
+    // `lifequest:detach` is the same hook the theme button uses for its
+    // listener — the router fires it on the outgoing view.
+    const board = deadlineBoard(screen, {
+      expiresAt: soonest.expiresAt,
+      animate: motionAllowed(),
+      // Re-render rather than leave a board reading EXPIRED above a quest that
+      // the server has already swept out of the list.
+      onExpire: () => { refreshQuests().then(() => navigate('/')); },
+    });
+    housing.addEventListener('lifequest:detach', () => board.destroy());
+    todaySection.append(housing);
+  }
+
   if (today.length) {
     todaySection.append(el('div', { class: 'grid grid--2' },
       ...today.map((quest) => questCard(quest, { onChanged: () => navigate('/') }))));
   } else {
-    todaySection.append(emptyState('🗺️', 'No quests open today',
+    todaySection.append(emptyState('map', 'No quests open today',
       'Generate a set and the engine will pick archetypes matched to your level, interests and recent history.',
       el('button', {
         class: 'btn btn--primary', text: 'Generate quests',
@@ -139,10 +177,9 @@ export async function dashboardView() {
           el('p', { class: 'muted', text: chain.description }),
           meter((chain.step / chain.totalSteps) * 100, chain.domain),
           el('ol', { class: 'rec-list', style: { marginTop: '10px' } },
-            ...chain.steps.map((step) => el('li', {
-              class: step.done ? 'dim' : '',
-              text: `${step.done ? '✓ ' : ''}${step.title}`,
-            }))))))));
+            ...chain.steps.map((step) => el('li', { class: step.done ? 'dim' : '' },
+              step.done ? icon('check', { size: 14, className: 'rec-list__done' }) : null,
+              el('span', { text: step.title })))))))));
   }
 
   return container;

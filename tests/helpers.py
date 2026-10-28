@@ -11,6 +11,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+# The smallest valid PNG there is: a single transparent pixel. Real bytes, so it
+# survives the upload endpoint's content sniffing rather than being waved past.
+PNG_1X1 = bytes.fromhex(
+    "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4"
+    "890000000a49444154789c63000100000500010d0a2db40000000049454e44ae426082")
+
 
 def use_temp_database() -> str:
     """Point config at a throwaway database. Must run before importing db users."""
@@ -76,6 +82,28 @@ class Client:
     def signup(self, username="tester", password="quest-runner-9"):
         return self.post("/api/auth/signup", {"username": username, "password": password})
 
+    def upload_png(self, name="proof.png"):
+        """Upload a real 1x1 PNG and return the stored file metadata.
+
+        Evidence is mandatory, and the submit endpoint checks that every file id
+        it is handed actually exists on disk for that player — so a fabricated
+        metadata dict is dropped on the way in and the submission arrives with
+        no artifact. Going through the real endpoint is also the only way these
+        tests cover the upload path at all.
+        """
+        boundary = "----lifequest-test-boundary"
+        body = (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="file"; filename="{name}"\r\n'
+            "Content-Type: image/png\r\n\r\n"
+        ).encode() + PNG_1X1 + f"\r\n--{boundary}--\r\n".encode()
+
+        status, data = self.request(
+            "POST", "/api/uploads", raw_body=body,
+            headers={"content-type": f"multipart/form-data; boundary={boundary}"})
+        assert status == 201, f"upload failed: {status} {data}"
+        return data["files"][0]
+
     def onboard(self, **overrides):
         payload = {
             "displayName": "Zach",
@@ -107,23 +135,51 @@ class FakeProvider:
         self.json_calls = []
         self.text_calls = []
 
-    def complete_json(self, system, prompt, schema, max_tokens=2000):
-        self.json_calls.append({"system": system, "prompt": prompt, "schema": schema})
+    # `timeout` mirrors the real providers: callers with a player waiting on the
+    # answer pass a deadline. The fake answers instantly, so it only records it.
+    def complete_json(self, system, prompt, schema, max_tokens=2000, timeout=None):
+        self.json_calls.append({"system": system, "prompt": prompt, "schema": schema,
+                                "timeout": timeout})
         return self.json_response
 
-    def complete_text(self, system, prompt, max_tokens=1000):
-        self.text_calls.append({"system": system, "prompt": prompt})
+    def complete_text(self, system, prompt, max_tokens=1000, timeout=None):
+        self.text_calls.append({"system": system, "prompt": prompt, "timeout": timeout})
         return self.text_response
 
 
+# A stand-in for an uploaded file. Only the shape matters to the evaluator: the
+# real endpoint stores `contentType`, and evidence scoring reads it to tell a
+# filmed set from a photographed page.
+def photo(name="worked-pages.jpg"):
+    return {"id": "test-" + name, "name": name,
+            "url": "/api/uploads/test-" + name, "contentType": "image/jpeg"}
+
+
+def clip(name="set.webm"):
+    return {"id": "test-" + name, "name": name,
+            "url": "/api/uploads/test-" + name, "contentType": "video/webm"}
+
+
 def good_proof(minutes=45):
+    """A submission that should verify.
+
+    It carries an artifact, because since evidence became mandatory a write-up
+    on its own cannot verify however well written it is — that is the rule under
+    test everywhere else, so the shared fixture has to respect it rather than
+    quietly bypass it.
+    """
     return {
         "text": ("Ran a 45 minute mathematics session on integration by parts. Warmed up "
                  "with four review problems, then worked through 10 problems from the "
                  "textbook, getting 7 right. The two I missed were both substitution "
                  "errors where I dropped the constant."),
-        "reflection": ("I learned that my mistakes cluster around setting up the "
-                       "substitution rather than the integration itself. Next time I will "
-                       "write the substitution explicitly before integrating."),
         "structured": {"minutes": str(minutes), "problems": "10"},
+        "files": [photo()],
     }
+
+
+def text_only_proof(minutes=45):
+    """The same submission with the artifact removed — must never verify."""
+    proof = good_proof(minutes)
+    proof.pop("files", None)
+    return proof

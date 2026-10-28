@@ -6,3 +6,8 @@ __pycache__/
 *.db-wal
 *.db-shm
 .DS_Store
+
+# Claude Code: per-machine settings (permissions). The shared
+# .claude/settings.json, if one is ever added, stays checked in.
+.claude/settings.local.json
+_site/

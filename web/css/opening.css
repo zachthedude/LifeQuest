@@ -1,10 +1,12 @@
 /* ==========================================================================
    OPENING — the front door (js/views/opening.js).
 
-   A still, quiet page: one centred hero on a faint grid, then the case for the
-   product in generous whitespace underneath. It is the deliberate opposite of
-   landing.css, which is a pinned cinema; nothing here is scroll-driven, and the
-   page is complete and readable with scripting off.
+   A quiet page: one centred hero on a faint grid, then the case for the product
+   in generous whitespace underneath. The cinematic that used to live behind a
+   button at the bottom is now two sections in the middle of it (landing.css),
+   which is the only scroll-driven thing here — and it animates from scroll
+   position onto a layout that is already complete, so the page stays readable
+   with scripting off.
 
    Built from the tokens in styles.css, with one local set for the things this
    page invents: the flat wash it sits on, the ink gradient on the display type,
@@ -120,8 +122,8 @@
 .open__barlink:hover {
   color: var(--text); border-color: var(--border-strong); transform: translateY(-1px);
 }
-.open__barlink:focus-visible, .open__door:focus-visible, .open__cue:focus-visible,
-.open__introlink:focus-visible { outline: none; box-shadow: var(--ring); }
+.open__barlink:focus-visible, .open__door:focus-visible,
+.open__cue:focus-visible { outline: none; box-shadow: var(--ring); }
 
 /* ------------------------------------------------------------------- hero -- */
 .open__hero {
@@ -152,6 +154,24 @@
   color: transparent; -webkit-text-fill-color: transparent;
   transform: translateZ(0);
   filter: drop-shadow(0 14px 30px var(--open-ink-shadow));
+}
+
+/* Both display lines decrypt, and the gradient on each is clipped to the text of
+   the element itself — so the glyph cells the effect builds have to give up
+   their own fill entirely and let the parent's gradient through them. A cell
+   that painted its own colour would repaint the headline flat. */
+.open__headline .decrypt__layer,
+.open__headline [data-char],
+.open__closinghead .decrypt__layer,
+.open__closinghead [data-char] {
+  background: none;
+  color: transparent; -webkit-text-fill-color: transparent;
+}
+/* A scrambling glyph does paint its own ink, so the boil stays visible against
+   the gradient instead of disappearing into it. */
+.open__headline [data-char][data-state="scramble"],
+.open__closinghead [data-char][data-state="scramble"] {
+  -webkit-text-fill-color: color-mix(in srgb, var(--open-ink-b) 72%, var(--accent));
 }
 
 .open__lede {
@@ -340,15 +360,6 @@
   transform: translateZ(0);
 }
 .open__closing .open__lede { margin-top: 14px; }
-.open__introlink {
-  display: inline-flex; align-items: center; gap: 9px; margin-top: 22px; cursor: pointer;
-  padding: 9px 16px; border-radius: 99px; background: none;
-  border: 1.5px solid transparent; color: var(--text-dim);
-  font-family: var(--font-display); font-weight: 700; font-size: 13px;
-  transition: color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
-}
-.open__introlink:hover { color: var(--text-muted); border-color: var(--border); }
-.open__introglyph { font-size: 10px; color: var(--xp); }
 
 .open__footer {
   display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;

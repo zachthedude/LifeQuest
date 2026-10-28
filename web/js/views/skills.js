@@ -18,7 +18,7 @@
 // still there below the tree. A screen reader gets the list; a mouse gets both.
 
 import { api } from '../api.js';
-import { chip, el, svg, DOMAIN_LABEL, DOMAIN_ICON } from '../ui.js';
+import { chip, el, rich, svg, DOMAIN_LABEL, DOMAIN_ICON } from '../ui.js';
 
 const TIER_NAME = { 1: 'Foundation', 2: 'Development', 3: 'Specialisation', 4: 'Mastery' };
 const DOMAINS = ['physical', 'academic', 'passion'];
@@ -30,6 +30,18 @@ const H = 1120;
 const GROUND = 940;          // the soil line
 const CROWN = 190;           // where level 100 sits; the canopy is above it
 const TRUNK_X = W / 2;
+// How close a bud may come to the frame. The clamp at the end of `layout` uses
+// it too, so a bud pushed past the edge is pulled back to the same line rather
+// than to an arbitrary one.
+const EDGE = 76;
+// How far the leader's first bud stands off the trunk. Anything closer and the
+// bud sits on the growth rings and their level labels.
+const ACAD_BASE = 118;
+// The clearance two buds must actually have. Both sit a little above what makes
+// the drawing unreadable, so the layout has margin rather than sitting exactly
+// on the limit.
+const MIN_DX = 66;
+const MIN_DY = 42;
 
 // Where each domain's limb lives, as a fraction of the width. Academic runs up
 // the middle — in a real tree that is the leader, and it is also the domain with
@@ -73,20 +85,32 @@ function layout(nodes) {
       else clusters.push([{ node, y }]);
     }
 
-    let alternate = 0;
     for (const cluster of clusters) {
+      // The fan has to fit the band it is drawn in. A fixed step looked right
+      // while a cluster held two or three buds and then, as the tree grew, put
+      // the outer ones past the edge — where the clamp below stacked them on top
+      // of each other, which is the one thing this layout must never do. So the
+      // step is whatever divides the room available, capped at the old spacing
+      // so a small cluster is not flung apart to fill the width.
+      const centre = domain === 'academic' ? TRUNK_X : W * BAND[domain];
+      const room = Math.min(centre, W - centre) - EDGE;
+      const steps = Math.max(1, cluster.length - 1);
+      // The leader alternates left and right of the trunk rather than fanning
+      // symmetrically through it — a fan puts the middle node straight on the
+      // trunk, over the growth rings and their labels. Side and rung both come
+      // from the position in *this* cluster: a counter that ran on across
+      // clusters put a bud on the same side at the same reach as one only 27px
+      // above it.
+      const rungs = Math.max(1, Math.ceil(cluster.length / 2) - 1);
+      const step = Math.min(96, (room - ACAD_BASE - 12) / rungs);
       cluster.forEach((entry, index) => {
-        const spread = 78 + (entry.node.tier - 1) * 24;
+        const spread = Math.min(78 + (entry.node.tier - 1) * 24, room / (steps + 1));
         let x;
         if (domain === 'academic') {
-          // The leader. Its buds alternate left and right of the trunk rather
-          // than fanning symmetrically through it — a fan puts the middle node
-          // straight on the trunk, on top of the growth rings and their labels.
-          alternate += 1;
-          const side = alternate % 2 === 0 ? 1 : -1;
-          x = TRUNK_X + side * (112 + (entry.node.tier - 1) * 26 + index * 96);
+          const side = index % 2 === 0 ? -1 : 1;
+          const rung = Math.floor(index / 2);
+          x = centre + side * (ACAD_BASE + rung * step);
         } else {
-          const centre = W * BAND[domain];
           const offset = cluster.length === 1
             ? 0
             : (index - (cluster.length - 1) / 2) * spread * 2;
@@ -94,7 +118,7 @@ function layout(nodes) {
         }
         placed.set(entry.node.key, {
           node: entry.node,
-          x: Math.max(76, Math.min(W - 76, x)),
+          x: Math.max(EDGE, Math.min(W - EDGE, x)),
           y: entry.y,
           // Neighbours alternate their label above and below the bud, so a pair
           // that is still close horizontally cannot write over each other.
@@ -128,6 +152,40 @@ function layout(nodes) {
     if (underflow > 0) for (const spot of band) spot.x += underflow;
     i = j + 1;
   }
+
+  // The band pass keeps the drawing tidy. This one makes it correct.
+  //
+  // Bands are cut where a gap in height opens up, so two buds a few pixels apart
+  // vertically can fall either side of a boundary and never be compared with
+  // each other at all — which is how a level-6 and a level-8 skill ended up 29px
+  // apart once the tree grew past twenty nodes.
+  //
+  // Rather than another ordering rule, this relaxes the whole drawing: find any
+  // pair still too close, push both apart by half the shortfall each, repeat
+  // until nothing moves. Symmetric, so it cannot depend on which bud is looked
+  // at first, and it settles in a handful of rounds because every step strictly
+  // increases the distance of the worst pair.
+  const spots = [...placed.values()];
+  const clampX = (x) => Math.max(EDGE, Math.min(W - EDGE, x));
+  for (let round = 0; round < 300; round += 1) {
+    let worst = null;
+    for (let a = 0; a < spots.length && !worst; a += 1) {
+      for (let b = a + 1; b < spots.length; b += 1) {
+        const gapY = Math.abs(spots[a].y - spots[b].y);
+        const gapX = Math.abs(spots[a].x - spots[b].x);
+        if (gapY < MIN_DY && gapX < MIN_DX) { worst = [spots[a], spots[b], gapX]; break; }
+      }
+    }
+    if (!worst) break;
+    const [one, two, gapX] = worst;
+    const shift = (MIN_DX - gapX) / 2 + 1;
+    // Ties are broken on the key so two buds that started at the same x still
+    // separate, rather than pushing each other the same way for ever.
+    const oneIsLeft = one.x < two.x || (one.x === two.x && one.node.key < two.node.key);
+    one.x = clampX(one.x + (oneIsLeft ? -shift : shift));
+    two.x = clampX(two.x + (oneIsLeft ? shift : -shift));
+  }
+
   return placed;
 }
 
@@ -344,9 +402,12 @@ export async function skillsView() {
     el('div', { class: 'page-head' },
       el('div', {},
         el('h1', { text: 'Skill tree' }),
-        el('p', { text: 'One tree, grown by level. The roots are level 1, each growth ring on '
+        el('p', {}, ...rich(
+          'One tree, grown by level. The roots are level 1, each growth ring on '
           + 'the trunk is a milestone, the three limbs are your domains, and the crown is what '
-          + 'is left after level 100. Skills open where their prerequisites fork.' })),
+          + 'is left after level 100. Skills open where their prerequisites fork.',
+          [['level 1', 'xp'], ['level 100', 'xp'], ['your domains', null],
+           ['prerequisites fork', 'strong']]))),
       chip(`Level ${data.level}`, 'xp')));
 
   container.append(el('section', { class: 'card grow__card' },

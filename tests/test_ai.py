@@ -5,7 +5,7 @@ from __future__ import annotations
 import itertools
 import unittest
 
-from helpers import Client, FakeProvider, use_temp_database
+from helpers import Client, FakeProvider, good_proof, text_only_proof, use_temp_database
 
 use_temp_database()
 
@@ -35,12 +35,14 @@ def quest(**overrides):
     return base
 
 
+# Carries a photograph, because a write-up alone no longer verifies anything the
+# catalogue offers a way to photograph.
 GOOD_PROOF = {
     "text": ("Worked through 10 integration problems from chapter 7. Got 7 right; the two "
              "I missed were substitution errors where I dropped the constant."),
-    "reflection": ("I learned my mistakes cluster around setting up the substitution rather "
-                   "than the integration itself."),
     "structured": {"minutes": "40", "count": "10"},
+    "files": [{"id": "t.jpg", "name": "worked-pages.jpg",
+               "url": "/api/uploads/t.jpg", "contentType": "image/jpeg"}],
 }
 
 
@@ -70,12 +72,34 @@ class ProofEvaluatorTests(unittest.TestCase):
         self.assertNotEqual(result["verdict"], "verified")
         self.assertTrue(result["notes"])
 
-    def test_reflection_raises_the_reward_multiplier(self):
-        without = proof_evaluator.evaluate(
-            quest(), {"text": GOOD_PROOF["text"], "structured": GOOD_PROOF["structured"]},
-            [], ["text", "reflection"])
-        with_reflection = proof_evaluator.evaluate(quest(), GOOD_PROOF, [], ["text", "reflection"])
-        self.assertGreater(with_reflection["qualityMultiplier"], without["qualityMultiplier"])
+    def test_evidence_raises_the_reward_multiplier(self):
+        """Attaching the artifact is worth more XP, not just a cleaner record.
+
+        This replaced a test that rewarded writing a reflection. Reflection was
+        the easiest part of a submission to produce without doing the work, so
+        paying for it paid for typing; this pays for evidence.
+        """
+        types = ["text", "photo"]
+        bare = proof_evaluator.evaluate(quest(), text_only_proof(), [], types)
+        attached = proof_evaluator.evaluate(quest(), good_proof(), [], types)
+        self.assertGreater(attached["qualityMultiplier"], bare["qualityMultiplier"])
+        self.assertGreater(attached["evidence"], bare["evidence"])
+
+    def test_a_write_up_alone_cannot_verify_a_quest_that_takes_evidence(self):
+        """The floor the whole redesign rests on."""
+        verdicts = {}
+        for types in (["text", "photo"], ["text", "video"], ["text", "link"],
+                      ["text", "document"]):
+            result = proof_evaluator.evaluate(quest(), text_only_proof(), [], types)
+            verdicts[types[1]] = result["verdict"]
+            self.assertIn("attached", result["feedback"].lower())
+        self.assertNotIn("verified", verdicts.values(), verdicts)
+
+    def test_a_quest_with_nothing_to_attach_is_not_punished_for_it(self):
+        """The teaching mission and custom quests take no artifact — and must
+        still be completable on a good write-up alone."""
+        result = proof_evaluator.evaluate(quest(), text_only_proof(), [], ["text"])
+        self.assertEqual(result["verdict"], "verified")
 
     def test_cross_domain_quests_accept_any_domain_vocabulary(self):
         tutorial = quest(
@@ -85,8 +109,8 @@ class ProofEvaluatorTests(unittest.TestCase):
             completion_criteria="A 15-minute activity described in your own words",
             domain="passion", estimated_time=15)
         walk = {
-            "text": "Went for a 20 minute walk around the park and stretched afterwards.",
-            "reflection": "I noticed my ankles are the tight part, not my hamstrings.",
+            "text": ("Went for a 20 minute walk around the park and stretched afterwards. "
+                     "I noticed my ankles are the tight part, not my hamstrings."),
             "structured": {"minutes": "20"},
         }
         self.assertEqual(proof_evaluator.evaluate(tutorial, walk, [], ["text"])["verdict"],
@@ -94,7 +118,7 @@ class ProofEvaluatorTests(unittest.TestCase):
 
     def test_model_scores_are_blended_but_anti_cheat_still_wins(self):
         provider_mod.set_provider(FakeProvider(json_response={
-            "relevance": 99, "completion": 99, "quality": 99, "reflection": 99,
+            "relevance": 99, "completion": 99, "quality": 99, "evidence": 99,
             "verdict": "verified", "feedback": "Looks complete.", "followUpQuestion": "",
         }))
         try:

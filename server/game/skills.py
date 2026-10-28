@@ -94,10 +94,26 @@ ALL_SKILLS: list[dict] = [
            "Rest, sleep and deload are training too.",
            requires=["phys_endurance"], level_required=20, quests_required=18,
            effect={"type": "xp_bonus", "domain": "physical", "value": 0.05}),
+    _skill("phys_discipline", "Discipline", "physical", 2,
+           "You train on the days you do not feel like training.",
+           requires=["phys_foundation"], level_required=10, quests_required=10,
+           effect={"type": "quality_floor", "value": 0.80}),
+    _skill("phys_conditioning", "Conditioning", "physical", 3,
+           "A base deep enough that hard sessions stop being a shock.",
+           requires=["phys_endurance"], level_required=20, quests_required=20,
+           effect={"type": "xp_bonus", "domain": "physical", "value": 0.04}),
+    _skill("phys_power", "Power", "physical", 3,
+           "Force produced quickly: jumping, throwing, sprinting.",
+           requires=["phys_strength"], level_required=22, quests_required=20,
+           effect={"type": "xp_bonus", "domain": "physical", "value": 0.04}),
     _skill("phys_athlete", "Athlete", "physical", 4,
            "Physical capability is now a defining strength.",
            requires=["phys_coordination", "phys_recovery"], level_required=45, quests_required=60,
            effect={"type": "xp_bonus", "domain": "physical", "value": 0.08}),
+    _skill("phys_resilience", "Resilience", "physical", 4,
+           "You absorb a hard week and come back the same person.",
+           requires=["phys_conditioning", "phys_power"], level_required=50, quests_required=70,
+           effect={"type": "quality_floor", "value": 0.90}),
 
     # ---- Academic ----
     _skill("acad_foundation", "Study Habit", "academic", 1,
@@ -128,10 +144,27 @@ ALL_SKILLS: list[dict] = [
            "Explaining what you know so others understand it.",
            requires=["acad_focus"], level_required=22, quests_required=20,
            effect={"type": "unlock_tag", "tag": "teaching"}),
+    _skill("acad_breadth", "Breadth", "academic", 2,
+           "More than one subject, deliberately, so ideas can cross.",
+           requires=["acad_foundation"], level_required=10, quests_required=10,
+           effect={"type": "xp_bonus", "domain": "academic", "value": 0.03}),
+    _skill("acad_synthesis", "Synthesis", "academic", 3,
+           "Pulling separate sources into one argument that is yours.",
+           requires=["acad_memory"], level_required=24, quests_required=22,
+           effect={"type": "xp_bonus", "domain": "academic", "value": 0.04}),
+    _skill("acad_rigour", "Rigour", "academic", 3,
+           "You check your own work before anyone else has to.",
+           requires=["acad_problem_solving"], level_required=24, quests_required=22,
+           effect={"type": "quality_floor", "value": 0.85}),
     _skill("acad_scholar", "Scholar", "academic", 4,
            "You can learn anything you decide to learn.",
            requires=["acad_critical", "acad_research"], level_required=45, quests_required=60,
            effect={"type": "xp_bonus", "domain": "academic", "value": 0.08}),
+    _skill("acad_polymath", "Polymath", "academic", 4,
+           "Depth in several fields, and the sense to connect them.",
+           requires=["acad_synthesis", "acad_communication"], level_required=50,
+           quests_required=75,
+           effect={"type": "xp_bonus", "domain": "academic", "value": 0.05}),
 
     # ---- Passion ----
     _skill("pass_curiosity", "Curiosity", "passion", 1,
@@ -154,13 +187,30 @@ ALL_SKILLS: list[dict] = [
            "Your work is written down and shareable.",
            requires=["pass_craft"], level_required=22, quests_required=20,
            effect={"type": "quality_floor", "value": 0.85}),
+    _skill("pass_discipline", "Discipline", "passion", 2,
+           "The work continues after the excitement has worn off.",
+           requires=["pass_curiosity"], level_required=10, quests_required=10,
+           effect={"type": "xp_bonus", "domain": "passion", "value": 0.04}),
+    _skill("pass_audience", "Audience", "passion", 3,
+           "You put the work in front of someone who is not you.",
+           requires=["pass_craft"], level_required=24, quests_required=22,
+           effect={"type": "xp_bonus", "domain": "passion", "value": 0.04}),
+    _skill("pass_taste", "Taste", "passion", 3,
+           "You can tell good from nearly-good, including your own.",
+           requires=["pass_explorer"], level_required=24, quests_required=22,
+           effect={"type": "quality_floor", "value": 0.85}),
     _skill("pass_creator", "Creator", "passion", 4,
            "You make things that exist in the world.",
            requires=["pass_builder", "pass_documenter"], level_required=45, quests_required=60,
            effect={"type": "xp_bonus", "domain": "passion", "value": 0.08}),
+    _skill("pass_mastery", "Mastery", "passion", 4,
+           "The field is yours. What you make now teaches other people.",
+           requires=["pass_audience", "pass_taste"], level_required=50, quests_required=75,
+           effect={"type": "xp_bonus", "domain": "passion", "value": 0.05}),
 ]
 
 SKILLS_BY_KEY = {s["key"]: s for s in ALL_SKILLS}
+MAX_SKILL_TIER = max(s["tier"] for s in ALL_SKILLS)
 MAX_TIER_FOR_LEVEL = [(20, 3), (0, 2)]  # tier 3+ needs the specialisation milestone
 
 
@@ -178,7 +228,10 @@ def evaluate(user_id: int, level: int, domain_quest_counts: dict[str, int]) -> l
         "SELECT skill_key FROM user_skills WHERE user_id=?", (user_id,))}
     newly: list[dict] = []
     # Multiple passes so a chain of prerequisites can unlock in one evaluation.
-    for _ in range(4):
+    # One pass per tier: a player who arrives at level 50 with the quest counts
+    # already banked has to be able to unlock a root, its branch, the specialism
+    # above it and the capstone above that in a single call.
+    for _ in range(MAX_SKILL_TIER):
         progressed = False
         for skill in ALL_SKILLS:
             if skill["key"] in owned:

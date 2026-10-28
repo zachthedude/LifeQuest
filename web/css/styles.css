@@ -1,7 +1,47 @@
 /* ==========================================================================
    LifeQuest design system — playful, dark-first, motion-aware.
-   Type: humanist/rounded. Colour: one accent per domain, gold for XP.
+   Type: rounded and self-hosted. Colour: one accent per domain, gold for XP.
    ========================================================================== */
+
+/* ----------------------------------------------------------------- type --
+   Two faces, both self-hosted under /fonts, because `font-src 'self'` in the
+   CSP forbids fetching them and a Google Fonts <link> would be blocked twice
+   over — once for the stylesheet, once for the file. Downloaded once and
+   committed, so the app has no network dependency and looks the same offline.
+
+   Both are variable fonts: one file each covers every weight the product uses,
+   which is why the whole type system costs two requests and ~70 KB.
+
+   * Nunito for everything you read. Rounded terminals and open counters — the
+     friendliest thing that is still a serious reading face at 15.5px.
+   * Baloo 2 for display: headings, the wordmark, levels, big numbers. Chunky
+     and unmistakably playful, which is exactly what a heading should be here
+     and exactly what body copy should not.
+
+   `font-display: swap` matters more than usual: the fallback stack is still the
+   rounded system stack these replaced, so a slow first paint degrades to the
+   previous design rather than to Times New Roman.
+   ------------------------------------------------------------------------- */
+@font-face {
+  font-family: "Nunito";
+  src: url("../fonts/nunito-latin.woff2") format("woff2");
+  font-weight: 200 1000;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+                 U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
+                 U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Baloo 2";
+  src: url("../fonts/baloo2-latin.woff2") format("woff2");
+  font-weight: 400 800;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+                 U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
+                 U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
 
 /* --------------------------------------------------------------- themes --
    Two palettes, one token contract. `data-theme` is written by js/theme.js and
@@ -71,14 +111,17 @@
   --halo-b: rgba(86, 208, 245, 0.17);
   --halo-c: rgba(189, 133, 255, 0.20);
 
-  /* Type — humanist and rounded, so the product reads as a game not a form */
-  --font: ui-rounded, "SF Pro Rounded", "Trebuchet MS", "Segoe UI Variable Text",
-          "Segoe UI", Verdana, system-ui, sans-serif;
-  --font-display: ui-rounded, "SF Pro Rounded", "Trebuchet MS",
-                  "Segoe UI Variable Display", system-ui, sans-serif;
+  /* Type — rounded and playful, so the product reads as a game not a form.
+     Every stack keeps the system fallbacks the self-hosted faces replaced, so
+     a blocked or slow font degrades to the previous design. */
+  --font: "Nunito", ui-rounded, "SF Pro Rounded", "Trebuchet MS",
+          "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-display: "Baloo 2", "Nunito", ui-rounded, "SF Pro Rounded",
+                  "Trebuchet MS", "Segoe UI Variable Display", system-ui, sans-serif;
   --font-mono: ui-monospace, "Cascadia Mono", "SF Mono", "Segoe UI Mono", Menlo, monospace;
   /* A contrasting face used mid-sentence to lift key words out of body copy.
-     All locally available — font-src is 'self', so nothing is fetched. */
+     Deliberately NOT rounded: with the body face this friendly, the emphasis
+     channel has to be a real change of voice to still register. */
   --font-accent: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia,
                  "Times New Roman", serif;
 
@@ -221,7 +264,10 @@ body::after {
 
 h1, h2, h3, h4 {
   margin: 0; font-family: var(--font-display);
-  line-height: 1.15; font-weight: 700; letter-spacing: -0.02em;
+  /* Baloo 2 carries tall ascenders and a deep descender, so it needs more room
+     than the system stack did and none of the negative tracking that stack
+     wanted — it is already tightly spaced by design. */
+  line-height: 1.22; font-weight: 700; letter-spacing: -0.005em;
 }
 h1 { font-size: clamp(1.75rem, 1.2rem + 2.1vw, 2.6rem); }
 h2 { font-size: 1.25rem; }
@@ -649,6 +695,75 @@ button, input, select, textarea { font: inherit; color: inherit; }
   color: var(--text-dim); border: 1px solid var(--border);
 }
 
+/* -- the quest drawing ----------------------------------------------------
+   A tinted tile so the figure reads as an illustration rather than a stray
+   icon, and so the domain colour appears twice on the card — once on the spine,
+   once here — instead of only on a chip. */
+.quest__lead { display: flex; gap: 13px; align-items: flex-start; }
+.quest__lead-text { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.quest__art {
+  flex: 0 0 auto; display: grid; place-items: center;
+  width: 72px; height: 62px; border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--domain-color) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--domain-color) 26%, transparent);
+  color: var(--domain-color);
+}
+/* The figure leans into the card's hover the way the card does, so the two read
+   as one object rather than a picture pinned to a panel. */
+.quest__art .questart { transition: transform var(--dur) var(--spring); }
+.quest:hover .quest__art .questart { transform: scale(1.06); }
+@media (prefers-reduced-motion: reduce) {
+  .quest:hover .quest__art .questart { transform: none; }
+}
+@media (max-width: 460px) {
+  .quest__art { width: 58px; height: 50px; }
+}
+
+/* -- filming the evidence -------------------------------------------------- */
+.capture { display: grid; gap: 10px; }
+.capture__stage {
+  position: relative; aspect-ratio: 16 / 10; border-radius: var(--r-md);
+  overflow: hidden; background: #05070f; border: 1px solid var(--border);
+}
+.capture__video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.capture__hud {
+  position: absolute; top: 8px; left: 8px; display: flex; align-items: center; gap: 6px;
+  padding: 3px 9px; border-radius: 999px; font-size: 12px;
+  background: rgba(5, 7, 15, .66); color: #fff; opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+.capture--live .capture__hud { opacity: 1; }
+/* The recording dot is the one place a warm colour is allowed outside XP: it is
+   a hardware state, and it has to be unmistakable. */
+.capture--live .capture__hud::before {
+  content: ''; width: 8px; height: 8px; border-radius: 50%; background: #ff5470;
+  animation: capture-pulse 1.4s var(--ease) infinite;
+}
+@keyframes capture-pulse { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) {
+  .capture--live .capture__hud::before { animation: none; }
+}
+.capture__note { margin: 0; font-size: 12.5px; }
+.capture__note--error { color: var(--danger, #ff6b8b); }
+
+/* -- dictation ------------------------------------------------------------- */
+.dictate { display: grid; gap: 6px; }
+.dictate__button { display: inline-flex; align-items: center; gap: 7px; }
+.dictate__dot {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--text-dim);
+  transition: background var(--dur) var(--ease);
+}
+.dictate--live .dictate__dot { background: #ff5470; animation: capture-pulse 1.4s var(--ease) infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .dictate--live .dictate__dot { animation: none; }
+}
+/* Interim words are provisional — they are shown in the dim voice so nobody
+   mistakes a guess the recogniser has not committed to for their own words. */
+.dictate__interim {
+  margin: 0; min-height: 1.2em; font-size: 13px; color: var(--text-dim); font-style: italic;
+}
+.dictate__interim--error { color: var(--danger, #ff6b8b); font-style: normal; }
+
 /* -------------------------------------------------------- assessment ----- */
 .assessment { display: grid; gap: 13px; }
 .assessment__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px,1fr)); gap: 10px; }
@@ -795,9 +910,15 @@ button, input, select, textarea { font: inherit; color: inherit; }
   background: var(--surface-2);
   box-shadow: 0 0 22px -12px var(--domain-color, var(--xp));
 }
+/* Drawn rather than typed: a check *character* is a font glyph, so its weight
+   and size drift from the stroked icon set on every platform. Two borders on a
+   rotated box is the same tick at the same 2.5px weight everywhere. */
 .node--unlocked::before {
-  content: "✓"; position: absolute; top: 11px; right: 13px;
-  color: var(--domain-color, var(--xp)); font-weight: 800;
+  content: ""; position: absolute; top: 12px; right: 13px;
+  width: 11px; height: 6px; border-radius: 1px;
+  border-left: 2.5px solid var(--domain-color, var(--xp));
+  border-bottom: 2.5px solid var(--domain-color, var(--xp));
+  transform: rotate(-45deg);
 }
 .node--locked { opacity: .58; }
 .node[data-domain="physical"] { --domain-color: var(--physical); }
@@ -998,33 +1119,80 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .onboard__nav { display: flex; justify-content: space-between; gap: 12px; margin-top: 28px; }
 
 /* ------------------------------------------------------------------ auth - */
+/* The centred-modal layout from `modern-login-signup.tsx`: a full-bleed dot
+   field, a vignette that darkens the middle so the card has a ground to sit on,
+   and one card centred over both. */
 .auth {
-  min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr);
+  position: relative; overflow: hidden;
+  min-height: 100vh; min-height: 100dvh;
+  display: grid; place-items: center;
+  padding: clamp(22px, 5vh, 60px) 20px;
+  background: var(--bg);
 }
-.auth__art {
-  position: relative; display: flex; flex-direction: column; justify-content: center;
-  gap: 22px; padding: clamp(30px, 4vw, 64px);
-  background:
-    radial-gradient(70% 60% at 20% 20%, rgba(86,208,245,.14), transparent 60%),
-    radial-gradient(70% 60% at 85% 85%, rgba(189,133,255,.18), transparent 60%),
-    var(--chrome);
-  border-right: 1px solid var(--border);
-  overflow: hidden;
+
+/* The dot field itself. The CSS grid here is not a placeholder — it is the
+   fallback, and it is what a machine with no WebGL2 keeps looking at, so the
+   cell matches the shader's own (totalSize 22 ÷ scale 2 = 11 CSS px). */
+.auth__field {
+  position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  --dot-cell: 11px;
+  /* The ceiling here is text contrast, not taste: the headline and the lede sit
+     directly on this, and a field bright enough to admire is a field that eats
+     their legibility. */
+  --field-opacity: .58;
+  background-image: radial-gradient(circle at 1px 1px,
+                                    var(--border-strong) 1px, transparent 0);
+  background-size: var(--dot-cell) var(--dot-cell);
+  opacity: .55;
 }
-.auth__artcopy { max-width: 30ch; }
+:root[data-theme="light"] .auth__field { --field-opacity: .5; }
+/* Once the shader is up it owns the layer outright. */
+.auth__field--live { background-image: none; opacity: 1; }
+.auth__field .dotfield__canvas {
+  position: absolute; inset: 0; width: 100%; height: 100%; display: block;
+  opacity: 0; animation: dotfield-in 800ms var(--ease) forwards;
+}
+@keyframes dotfield-in { to { opacity: var(--field-opacity); } }
+
+/* Darkest in the middle, clear at the edges — the original's vignette is the
+   opposite way round from the usual one, and deliberately: it sinks a ground
+   under the card while leaving the field bright where it is only texture. The
+   stop is past the card's own width so the copy above it never sits on bare
+   grid. */
+.auth__vignette {
+  position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background: radial-gradient(circle at center,
+                              color-mix(in srgb, var(--bg) 94%, transparent) 0%,
+                              color-mix(in srgb, var(--bg) 62%, transparent) 34%,
+                              transparent 76%);
+}
+
+.auth__modal {
+  position: relative; z-index: 2;
+  width: min(430px, 100%);
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+}
+.auth__modal .eyebrow { margin-top: 16px; }
 .auth__headline {
-  font-size: clamp(2rem, 1.2rem + 2.6vw, 3.1rem); margin: 10px 0 12px; line-height: 1.08;
+  font-size: clamp(1.65rem, 1.1rem + 2vw, 2.35rem); margin: 12px 0 10px; line-height: 1.1;
 }
-.auth__lede { color: var(--text-muted); font-size: 15px; margin: 0; }
-@keyframes float { from { transform: translateY(-8px); } to { transform: translateY(10px); } }
-.auth__promises { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
-.auth__promises li { display: flex; gap: 12px; align-items: flex-start; font-size: 14px; }
+.auth__lede {
+  color: var(--text-muted); font-size: 14.5px; margin: 0 0 18px; max-width: 40ch;
+}
+@keyframes float { from { transform: translateY(-5px); } to { transform: translateY(5px); } }
+
+/* Under the divider, where the component stacks its three OAuth buttons. There
+   is no OAuth in this app, so the three promises hold the rhythm instead. */
+.auth__divider { height: 1px; background: var(--border); margin: 20px 0 16px; }
+.auth__promises { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.auth__promises li {
+  display: flex; gap: 10px; align-items: center; font-size: 13px; line-height: 1.45;
+}
 .auth__promiseicon {
-  font-size: 19px; width: 38px; height: 38px; flex: none; display: grid; place-content: center;
-  border-radius: 12px; background: var(--surface-2); border: 1.5px solid var(--border);
+  font-size: 15px; width: 30px; height: 30px; flex: none; display: grid; place-content: center;
+  border-radius: 10px; background: var(--surface-2); border: 1.5px solid var(--border);
 }
-.auth__panel { display: grid; place-items: center; padding: clamp(24px, 4vw, 56px) 22px; }
-.auth-card { width: min(430px, 100%); }
+.auth-card { width: 100%; text-align: left; }
 .auth__foot { font-size: 12.5px; text-align: center; margin: 16px 0 0; }
 .auth-tabs {
   display: flex; gap: 4px; background: var(--surface-2); padding: 5px;
@@ -1038,6 +1206,236 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .auth-tabs button[aria-selected="true"] {
   background: var(--surface-solid); color: var(--text); box-shadow: var(--shadow-1);
+}
+
+/* ---- password recovery ---- */
+/* A detour off sign-in rather than a third door, so it is a quiet text button
+   under the form rather than another tab competing with the two real ones. */
+.auth__links { display: flex; justify-content: center; gap: 14px; margin-top: 2px; }
+.auth__forgot {
+  border: none; background: none; padding: 4px 2px; cursor: pointer;
+  color: var(--text-muted); font-family: var(--font); font-size: 12.5px;
+  font-weight: 600; text-decoration: underline; text-underline-offset: 3px;
+  transition: color var(--dur-fast) var(--ease);
+}
+.auth__forgot:hover { color: var(--accent); }
+.auth__forgot:focus-visible { outline: none; box-shadow: var(--ring); border-radius: 8px; }
+.auth__sendcode {
+  display: grid; gap: 6px; justify-items: start;
+  padding: 12px 14px; border-radius: var(--r-md);
+  background: var(--surface-2); border: 1px solid var(--border);
+}
+.auth__sendcode .btn { margin-top: 4px; }
+.auth__notice {
+  margin: 0; font-size: 12.5px; font-weight: 600; color: var(--success);
+}
+/* The code is read off a terminal and typed back in, so it is set in the mono
+   face at a size that makes O/0 and I/1 arguments impossible to have. */
+input[name="code"] {
+  font-family: var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase;
+}
+
+/* ---------------------------------------------------------- mission mode -- */
+/* While a quest is running the whole app reddens and darkens, driven by one
+   number: `--urgency`, 0 at the start of the session and 1 at the end of it.
+   Everything below reads that number; nothing below decides it.
+
+   The transitions are long on purpose. Starting a quest should feel like the
+   room changing, not like a class being toggled, and the ramp itself is slow
+   enough that you notice it has happened rather than watching it happen. */
+:root { --urgency: 0; }
+
+/* The halo field behind everything. At rest it is the app's indigo/cyan/violet;
+   under way it bleeds to red and loses light, so the interface sits in a darker
+   room the longer the quest runs. */
+.is-onquest body::before,
+.is-onquest::before { filter: none; }
+.is-onquest body::before {
+  background:
+    radial-gradient(38vmax 32vmax at 78% 8%,
+      color-mix(in srgb, #ff4d4d calc(var(--urgency) * 62%), var(--halo-a)), transparent 62%),
+    radial-gradient(36vmax 34vmax at 12% 22%,
+      color-mix(in srgb, #c81f2e calc(var(--urgency) * 66%), var(--halo-b)), transparent 60%),
+    radial-gradient(42vmax 38vmax at 62% 92%,
+      color-mix(in srgb, #8d0f22 calc(var(--urgency) * 70%), var(--halo-c)), transparent 62%),
+    linear-gradient(175deg,
+      color-mix(in srgb, #1a0507 calc(var(--urgency) * 78%), var(--bg-1)),
+      color-mix(in srgb, #120406 calc(var(--urgency) * 82%), var(--bg-2)) 45%,
+      color-mix(in srgb, #0a0203 calc(var(--urgency) * 85%), var(--bg)));
+  transition: background 2.4s var(--ease);
+}
+/* The page ground itself darkens too, so translucent cards sit on something
+   that has changed rather than floating over an unchanged floor. */
+.is-onquest body {
+  background: color-mix(in srgb, #0b0204 calc(var(--urgency) * 72%), var(--bg));
+  transition: background 2.4s var(--ease);
+}
+
+/* The constellation mesh re-reads these whenever it is told to retint. */
+.is-onquest .appbg {
+  --mesh-node: 255, 158, 158;
+  --mesh-accent: 255, 74, 74;
+  --mesh-link: .22;
+  --orb-opacity: calc(.34 + var(--urgency) * .26);
+}
+:root[data-theme="light"].is-onquest .appbg {
+  --mesh-node: 132, 18, 30;
+  --mesh-accent: 186, 24, 38;
+  --mesh-link: .12;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .is-onquest body, .is-onquest body::before { transition: none; }
+}
+:root[data-motion="reduced"].is-onquest body,
+:root[data-motion="reduced"].is-onquest body::before { transition: none; }
+
+/* ---- the pinned session clock ---- */
+/* Above every screen, because the point is that you cannot be on a quest and
+   not know it. Top-centre on the desktop, tucked under the topbar; bottom-right
+   on a phone, clear of the tab bar. */
+.questclock {
+  position: fixed; z-index: 60; top: 74px; left: 50%; transform: translateX(-50%);
+  display: grid; gap: 7px; justify-items: center; width: min(300px, 78vw);
+  padding: 11px 14px 13px; border-radius: var(--r-lg);
+  background: rgba(10, 4, 6, .88);
+  border: 1px solid color-mix(in srgb, #ff4d4d calc(22% + var(--urgency) * 46%), transparent);
+  box-shadow: 0 18px 40px -20px rgba(0, 0, 0, .9),
+              0 0 calc(14px + var(--urgency) * 30px)
+                 color-mix(in srgb, #ff2d2d calc(var(--urgency) * 38%), transparent);
+  backdrop-filter: blur(9px);
+  pointer-events: none;
+  animation: questclock-in 620ms var(--spring) both;
+  transition: border-color 2.4s var(--ease), box-shadow 2.4s var(--ease);
+}
+@keyframes questclock-in {
+  from { opacity: 0; transform: translate(-50%, -14px) scale(.96); }
+  to   { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+.questclock__label {
+  font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .3em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, #ff8a8a calc(40% + var(--urgency) * 60%), #8b93ad);
+}
+.questclock__title {
+  font-family: var(--font-display); font-weight: 700; font-size: 13px;
+  color: #eef1fb; text-align: center; line-height: 1.25;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.questclock__screen {
+  width: 100%; padding: 7px 9px; border-radius: var(--r-sm);
+  background: #05060a; box-shadow: inset 0 2px 9px rgba(0, 0, 0, 1);
+}
+.questclock__foot {
+  font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .14em;
+  text-transform: uppercase; color: #6f7690;
+}
+@media (prefers-reduced-motion: reduce) { .questclock { animation: none; } }
+
+@media (max-width: 900px) {
+  .questclock {
+    top: auto; bottom: 84px; left: auto; right: 12px; transform: none;
+    width: min(228px, 62vw); animation: none;
+  }
+}
+
+/* ------------------------------------------------------- flip-disk board -- */
+/* Ported from `flip-disk-matrix.tsx`. Each cell is a disk with two faces —
+   dark on the front, lit on the back — rotated 180° about X to change state.
+   `backface-visibility: hidden` on both faces is what makes only one of them
+   visible at a time; without it the two overlap and the board reads as mud.
+
+   The lit colour carries urgency rather than brand: gold while there is time,
+   amber under an hour, red under ten minutes. */
+.flipdisk {
+  /* Fixed rather than tokenised: the housing is dark in both themes, the same
+     call the deep card makes, so the unlit face is the matte black a real disk
+     shows rather than a light-mode surface colour that turns the board grey. */
+  --disk-off: #161a25;
+  --disk-off-line: #202637;
+  --disk-on: var(--xp);
+  --disk-on-line: color-mix(in srgb, var(--xp) 72%, black);
+  --flip-dur: 620ms;
+  width: 100%;
+}
+.flipdisk[data-tone="warn"]   { --disk-on: var(--warn);   --disk-on-line: color-mix(in srgb, var(--warn) 72%, black); }
+.flipdisk[data-tone="danger"] { --disk-on: var(--danger); --disk-on-line: color-mix(in srgb, var(--danger) 72%, black); }
+/* Reduced motion keeps the board and drops the clatter. */
+.flipdisk[data-still="true"] .flipdisk__flip { transition: none; }
+
+.flipdisk__grid {
+  display: grid;
+  grid-template-columns: repeat(var(--flip-cols), minmax(0, 1fr));
+  gap: clamp(1px, .28vw, 3px);
+}
+.flipdisk__disk { position: relative; width: 100%; aspect-ratio: 1; perspective: 400px; }
+.flipdisk__flip {
+  position: absolute; inset: 0; transform-style: preserve-3d;
+  transform: rotateX(0deg);
+  /* The overshoot is the point: a real disk hits its stop and rebounds. */
+  transition: transform var(--flip-dur) cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.flipdisk__flip.is-on { transform: rotateX(180deg); }
+.flipdisk__face {
+  position: absolute; inset: 0; border-radius: 50%;
+  backface-visibility: hidden; -webkit-backface-visibility: hidden;
+  border: 1px solid var(--disk-off-line);
+  background: var(--disk-off);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, .55);
+}
+.flipdisk__face--on {
+  transform: rotateX(180deg);
+  background: var(--disk-on);
+  border-color: var(--disk-on-line);
+  box-shadow: inset 0 -2px 6px rgba(0, 0, 0, .22),
+              0 0 10px color-mix(in srgb, var(--disk-on) 45%, transparent);
+}
+
+/* The housing: a black panel with the board recessed into it. */
+.flipboard {
+  display: grid; gap: 12px; justify-items: center;
+  padding: 14px 16px 16px;
+  border-radius: var(--r-lg);
+  background: #0b0d13;
+  border: 1px solid rgba(255, 255, 255, .07);
+  box-shadow: inset 0 4px 20px rgba(0, 0, 0, .85), 0 16px 34px -18px rgba(0, 0, 0, .8);
+}
+:root[data-theme="light"] .flipboard {
+  background: #12151f;
+  border-color: rgba(255, 255, 255, .05);
+}
+.flipboard__screen {
+  width: 100%; padding: 10px 12px; border-radius: var(--r-md);
+  background: #05060a;
+  box-shadow: inset 0 2px 10px rgba(0, 0, 0, 1);
+}
+.flipboard__label {
+  font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .28em;
+  text-transform: uppercase; color: #7b849f; text-align: center;
+}
+.flipboard__quest {
+  font-family: var(--font-display); font-weight: 700; font-size: 14px;
+  color: #dfe4f5; text-align: center; line-height: 1.25;
+}
+.flipboard__foot {
+  font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .16em;
+  text-transform: uppercase; color: #7b849f; text-align: center;
+}
+
+/* ---- proof: the evidence requirement ---- */
+/* Amber until the artifact is attached, green once it is. It states the rule
+   before the writing starts, because discovering it at submit time means having
+   written three paragraphs that cannot be verified. */
+.proof__need {
+  margin: 0; padding: 10px 13px; border-radius: var(--r-md);
+  font-size: 13px; font-weight: 600; line-height: 1.45;
+  background: rgba(255, 192, 77, .13); color: var(--warn);
+  border: 1px solid rgba(255, 192, 77, .34);
+}
+.proof__need--met {
+  background: rgba(92, 227, 154, .14); color: var(--success);
+  border-color: rgba(92, 227, 154, .38);
 }
 
 /* ------------------------------------------------------- decrypt text ---- */
@@ -1085,15 +1483,18 @@ button, input, select, textarea { font: inherit; color: inherit; }
 @keyframes decrypt-caret { 50% { opacity: 0; } }
 
 /* ------------------------------------------------- the reactive orb ------ */
-/* The sign-in artwork is a plain SVG; the WebGL orb lives behind the app. */
+/* The mark that opens the modal, in the seat the component gives its round
+   monogram. The reactive orb is still not here — it lives behind the app. */
 .auth__stage {
-  position: relative; align-self: center;
-  width: min(400px, 76%); aspect-ratio: 62 / 76;
-  display: grid; place-items: center;
+  position: relative;
+  width: 64px; height: 64px; flex: none;
+  display: grid; place-items: center; border-radius: 50%;
+  background: var(--surface-2); border: 1px solid var(--border);
+  box-shadow: var(--shadow-1);
 }
 .auth__stage .auth__image {
-  width: 100%; height: auto;
-  filter: drop-shadow(0 30px 60px rgba(0, 0, 0, .55));
+  width: 38px; height: 38px;
+  filter: drop-shadow(0 8px 18px rgba(0, 0, 0, .45));
   animation: float 7s var(--ease) infinite alternate;
 }
 
@@ -1106,43 +1507,48 @@ button, input, select, textarea { font: inherit; color: inherit; }
    and moving without the dashboard losing legibility. */
 .appbg {
   position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden;
-  --orb-opacity: .20;
-  --orb-blur: 34px;
+  --orb-opacity: .34;
   --orb-glow: rgba(125, 140, 255, .11);
+
+  /* The constellation mesh reads these three rather than carrying colours of
+     its own, so it can never drift from the palette. The canvas is transparent,
+     so the drifting halo field behind it still shows through. Both colours are
+     raw `r, g, b` triples because the canvas composes its own alpha per line and
+     per node. */
+  --mesh-node: 226, 232, 255;
+  --mesh-accent: 86, 208, 245;
+  --mesh-link: .18;
 }
 :root[data-theme="light"] .appbg {
-  /* Bright hues on white need less of everything: the same orb at dark-mode
-     strength turns body copy into low-contrast text on a colour field. */
-  --orb-opacity: .15;
-  --orb-blur: 42px;
+  /* Dark ink on white needs far less of everything: the same mesh at dark-mode
+     strength turns body copy into low-contrast text over a lattice. */
+  --orb-opacity: .26;
   --orb-glow: rgba(96, 120, 245, .08);
+  --mesh-node: 18, 25, 51;
+  --mesh-accent: 11, 118, 173;
+  --mesh-link: .08;
 }
-.appbg .blob__canvas {
-  position: absolute; inset: 0; width: 100%; height: 100%; display: block;
+.appbg .mesh__canvas {
+  position: absolute; inset: 0; display: block;
   opacity: 0; transition: opacity 1200ms var(--ease);
-  /* Blurred hard: this has to read as a lit colour field behind the interface,
-     never as an object competing with it for attention. */
-  filter: blur(var(--orb-blur)) saturate(1.1);
-  /* The blur samples transparent pixels at the edges and would otherwise fade
-     the orb out against the frame it is meant to spill past. */
-  transform: scale(1.08);
+  /* Deliberately unblurred, unlike the orb it replaced. The mesh *is* the
+     structure — blur it and there is nothing left but a grey wash — so the
+     contrast ceiling is held with opacity alone. */
 }
-.appbg--live .blob__canvas { opacity: var(--orb-opacity); }
-/* A lost context must not leave a dead rectangle over the app. */
-.appbg.blob--unavailable .blob__canvas { opacity: 0; }
+.appbg--live .mesh__canvas { opacity: var(--orb-opacity); }
 
-/* A soft highlight exactly under the cursor, mirroring the orb's own tracking.
-   It also carries the effect on its own if WebGL is unavailable. */
-.appbg::after {
+/* A soft highlight exactly under the cursor. The mesh lights its own
+   neighbourhood, so this is only wanted when there is no canvas to do it. */
+.appbg--flat::after {
   content: ""; position: absolute; inset: 0;
   background: radial-gradient(420px circle at var(--orb-x, 50%) var(--orb-y, 50%),
                               var(--orb-glow), transparent 72%);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .appbg .blob__canvas { transition: none; }
+  .appbg .mesh__canvas { transition: none; }
 }
-:root[data-motion="reduced"] .appbg .blob__canvas { transition: none; }
+:root[data-motion="reduced"] .appbg .mesh__canvas { transition: none; }
 
 /* -------------------------------------------------- theme + keywords ---- */
 .themebtn {
@@ -1194,7 +1600,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .kw--strong {
   font-family: var(--font-display);
-  font-style: normal; font-weight: 900;
+  /* 800, not 900: Baloo 2's variable range stops at 800, and asking past it
+     makes the browser synthesise a faux-bold over the real weight. */
+  font-style: normal; font-weight: 800;
   font-size: 1.02em; letter-spacing: -0.012em;
   color: var(--text);
 }
@@ -1225,11 +1633,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .landing__card .kw--passion { color: #d3aaff; }
 
 /* ------------------------------------------------------------ responsive - */
-@media (max-width: 1000px) {
-  .auth { grid-template-columns: minmax(0, 1fr); }
-  .auth__art { border-right: none; border-bottom: 1px solid var(--border); padding-bottom: 34px; }
-  .auth__stage { width: min(300px, 64%); }
-  .auth__promises { display: none; }
+/* The modal is one column at every width, so the only thing that changes is how
+   much room the copy above it is allowed to take. */
+@media (max-height: 780px) {
+  .auth__lede { display: none; }
+  .auth__headline { margin-top: 8px; }
 }
 
 @media (max-width: 900px) {
@@ -1264,7 +1672,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
   .quest__actions .btn { flex: 1; }
   .modal { border-radius: var(--r-lg); padding: 18px; }
   .hero__stats { gap: 16px; }
-  .auth__art { padding: 26px 20px; }
+  .auth { padding: 20px 14px; }
+  .auth__promises li { font-size: 12.5px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

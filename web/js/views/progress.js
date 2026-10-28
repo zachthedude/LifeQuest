@@ -2,7 +2,7 @@
 
 import { api } from '../api.js';
 import { attributeBars, consistencyHeatmap, timeBars, xpLineChart } from '../charts.js';
-import { chip, el, emptyState, formatMinutes, formatNumber, meter, DOMAIN_LABEL } from '../ui.js';
+import { chip, el, emptyState, formatMinutes, formatNumber, meter, rich, DOMAIN_LABEL } from '../ui.js';
 
 export async function progressView() {
   const report = await api.progress();
@@ -13,13 +13,14 @@ export async function progressView() {
     el('div', { class: 'page-head' },
       el('div', {},
         el('h1', { text: 'Progress' }),
-        el('p', { text: 'How you are actually improving — not how busy you have been.' })),
+        el('p', {}, ...rich('How you are actually improving — not how busy you have been.',
+          [['actually improving', 'strong'], ['busy', null]]))),
       el('div', { class: 'row' },
         chip(`Level ${snapshot.level}`, 'xp'),
         chip(`${formatNumber(snapshot.xp.xpTotal)} XP total`))));
 
   if (!hasData) {
-    container.append(emptyState('📊', 'No data to analyse yet',
+    container.append(emptyState('chart', 'No data to analyse yet',
       'Complete and verify a few quests and this screen fills in: XP over time, domain balance, consistency, success rates and where your hours actually go.',
       el('a', { class: 'btn btn--primary', href: '#/quests', text: 'Go to quests' })));
     return container;

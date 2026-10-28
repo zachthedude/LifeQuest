@@ -43,7 +43,11 @@ WEB_DIR = ROOT / "web"
 
 SESSION_DAYS = _int("LIFEQUEST_SESSION_DAYS", 30)
 MAX_UPLOAD_BYTES = _int("LIFEQUEST_MAX_UPLOAD_BYTES", 8 * 1024 * 1024)
-MAX_BODY_BYTES = _int("LIFEQUEST_MAX_BODY_BYTES", 12 * 1024 * 1024)
+# Video proof is recorded in the browser rather than picked from disk, so its
+# size is something the app chooses (bitrate × the recording cap) rather than
+# something a player hands us. It still needs far more headroom than a photo.
+MAX_VIDEO_BYTES = _int("LIFEQUEST_MAX_VIDEO_BYTES", 32 * 1024 * 1024)
+MAX_BODY_BYTES = _int("LIFEQUEST_MAX_BODY_BYTES", 40 * 1024 * 1024)
 
 # --- AI configuration -------------------------------------------------------
 # With no key set the app runs on the deterministic local provider: every AI
@@ -57,6 +61,19 @@ AI_ENABLED = os.environ.get("AI_ENABLED", "1") not in ("0", "false", "False")
 # auto | anthropic | ollama | none. `auto` prefers a hosted key when one is set,
 # then a running Ollama, then the built-in engine.
 AI_PROVIDER = os.environ.get("AI_PROVIDER", "auto").strip().lower() or "auto"
+
+# --- Interactive latency budgets --------------------------------------------
+# A model call that a player is *watching* has a different deadline from one the
+# server makes on its own behalf. Quest generation is the worst case: a mid-size
+# local model takes ~45s warm and ~130s cold to personalise one quest, and a
+# daily set is three of them — long enough that the screen reads as broken.
+#
+# So personalisation gets a per-quest deadline and the set gets a total budget.
+# Both are pure polish: when the budget runs out the locally rendered quest is
+# used, which is the same quest with the catalogue's wording instead of a
+# model's. A player never waits on prose.
+AI_QUEST_TIMEOUT = _int("AI_QUEST_TIMEOUT_SECONDS", 20)
+AI_QUEST_BUDGET = _int("AI_QUEST_BUDGET_SECONDS", 30)
 
 # --- Ollama -----------------------------------------------------------------
 # A local model needs no key and sends nothing off the machine. The timeout is

@@ -18,9 +18,10 @@ from __future__ import annotations
 
 import hashlib
 import random
+import time
 from datetime import datetime, timedelta, timezone
 
-from .. import db
+from .. import config, db
 from ..game import catalog, safety
 from ..game import xp as xp_mod
 from .provider import get_provider
@@ -92,12 +93,18 @@ def _tokens(model: dict, rng: random.Random, domain: str) -> dict[str, str]:
 
 def score_template(template: dict, *, level: int, target_tier: int, uses: dict[str, int],
                    open_keys: set[str], unlocked_tags: set[str], model: dict,
-                   rng: random.Random) -> float:
-    """Higher is better. Returns -inf for ineligible templates."""
+                   rng: random.Random, allow_open: bool = False) -> float:
+    """Higher is better. Returns -inf for ineligible templates.
+
+    `allow_open` is the relaxed second pass: an archetype the player already has
+    open is normally ineligible, but when *everything* is open it is far better
+    to issue a second push-up quest than to hand back "no quests available".
+    """
     if level < template["min_level"]:
         return float("-inf")
     if template["key"] in open_keys:
-        return float("-inf")
+        if not allow_open:
+            return float("-inf")
 
     gated_tags = {t for t in template["tags"] if t not in ("base", "explore")}
     if gated_tags and not (gated_tags & unlocked_tags):
@@ -109,6 +116,9 @@ def score_template(template: dict, *, level: int, target_tier: int, uses: dict[s
     score = 100.0
     score -= abs(template["tier"] - target_tier) * 22.0
     score -= uses.get(template["key"], 0) * 14.0          # novelty pressure
+    if template["key"] in open_keys:
+        # Only reachable on the relaxed pass: still the last thing we'd pick.
+        score -= 60.0
 
     interests = [s.lower() for s in (model.get("passion_interests") or [])]
     curious = [s.lower() for s in (model.get("passion_curious") or [])]
@@ -138,17 +148,24 @@ def select_template(user_id: int, domain: str, kind: str, level: int, model: dic
     open_keys = _open_template_keys(user_id)
 
     candidates = catalog.templates_for(domain=domain, kinds=(kind,))
-    scored = [
-        (score_template(t, level=level, target_tier=target_tier, uses=uses,
-                        open_keys=open_keys, unlocked_tags=unlocked_tags,
-                        model=model, rng=rng), t)
-        for t in candidates
-    ]
-    scored = [(s, t) for s, t in scored if s != float("-inf")]
-    if not scored:
-        return None
-    scored.sort(key=lambda pair: pair[0], reverse=True)
-    return scored[0][1]
+
+    # Two passes. The first refuses to repeat anything already open, which is
+    # what keeps a quest list varied. The second drops only that rule, so a
+    # player who has opened every archetype in a domain still gets a quest —
+    # the alternative was a dead end the player could not clear without
+    # abandoning work they had already started.
+    for allow_open in (False, True):
+        scored = [
+            (score_template(t, level=level, target_tier=target_tier, uses=uses,
+                            open_keys=open_keys, unlocked_tags=unlocked_tags,
+                            model=model, rng=rng, allow_open=allow_open), t)
+            for t in candidates
+        ]
+        scored = [(s, t) for s, t in scored if s != float("-inf")]
+        if scored:
+            scored.sort(key=lambda pair: pair[0], reverse=True)
+            return scored[0][1]
+    return None
 
 
 def render_template(template: dict, model: dict, level: int, user_id: int,
@@ -201,11 +218,22 @@ def _player_brief(model: dict, level: int, snapshot: dict) -> str:
 
 
 def personalise(spec: dict, model: dict, level: int, snapshot: dict,
-                recent_titles: list[str]) -> dict:
-    """Optional model pass. Returns the spec unchanged if anything is off."""
+                recent_titles: list[str], deadline: float | None = None) -> dict:
+    """Optional model pass. Returns the spec unchanged if anything is off.
+
+    `deadline` is a `time.monotonic()` stamp shared across a batch. Prose is the
+    only thing a model adds here, so when the clock runs out the locally
+    rendered quest ships instead of the player watching a spinner.
+    """
     provider = get_provider()
     if not provider.available:
         return spec
+
+    budget = float(config.AI_QUEST_TIMEOUT)
+    if deadline is not None:
+        budget = min(budget, deadline - time.monotonic())
+        if budget < 2.0:
+            return spec
 
     prompt = (
         f"{_player_brief(model, level, snapshot)}\n\n"
@@ -222,7 +250,8 @@ def personalise(spec: dict, model: dict, level: int, snapshot: dict,
         "evaluationCriteria should list 2-4 things a reviewer would check in the "
         "player's evidence."
     )
-    result = provider.complete_json(SYSTEM, prompt, QUEST_SCHEMA, max_tokens=900)
+    result = provider.complete_json(SYSTEM, prompt, QUEST_SCHEMA, max_tokens=900,
+                                    timeout=budget)
     if not result:
         return spec
 
@@ -267,7 +296,8 @@ def personalise(spec: dict, model: dict, level: int, snapshot: dict,
 
 def generate(user_id: int, domain: str, kind: str, level: int, model: dict,
              snapshot: dict, unlocked_tags: set[str], difficulty_offset: int = 0,
-             use_model: bool = True, salt: str = "") -> dict | None:
+             use_model: bool = True, salt: str = "",
+             deadline: float | None = None) -> dict | None:
     template = select_template(user_id, domain, kind, level, model, unlocked_tags,
                                difficulty_offset, salt=salt)
     if template is None:
@@ -276,5 +306,5 @@ def generate(user_id: int, domain: str, kind: str, level: int, model: dict,
     if use_model:
         recent = [row["title"] for row in db.query(
             "SELECT title FROM quests WHERE user_id=? ORDER BY id DESC LIMIT 8", (user_id,))]
-        spec = personalise(spec, model, level, snapshot, recent)
+        spec = personalise(spec, model, level, snapshot, recent, deadline=deadline)
     return spec

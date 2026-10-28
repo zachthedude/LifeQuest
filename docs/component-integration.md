@@ -1,17 +1,20 @@
 # Integrating the shadcn components into LifeQuest
 
-Four components were handed over for integration:
+Seven components were handed over for integration:
 
 | Source | Where it lives now |
 |---|---|
-| `cinematic-landing-hero.tsx` | `web/js/views/landing.js` — the cinematic intro |
+| `cinematic-landing-hero.tsx` | `web/js/components/introActs.js` — two acts inline in the opening page; the other two merged into it |
 | `orbiting-circles-02.tsx` + `particalsphear` | `web/js/components/orbitingCircles.js`, `web/js/components/particleSphere.js` |
 | `limelight-nav.tsx` | `web/js/components/limelightNav.js` — the app's navigation, both bars |
 | `woven-light-hero.tsx` | `web/js/components/wovenLight.js` — the opening page's background |
+| `modern-login-signup.tsx` | `web/js/components/dotMatrix.js` + `web/js/views/auth.js` — the sign-in screen |
+| `constellation-grid.tsx` | `web/js/components/constellationGrid.js` — the background of the signed-in app |
+| `flip-disk-matrix.tsx` | `web/js/components/flipDisk.js` — the quest deadline board on the dashboard |
 
-All four are live. `python run.py`, open <http://127.0.0.1:8770>, and the
+All seven are live. `python run.py`, open <http://127.0.0.1:8770>, and the
 opening page is what loads; the limelight nav is the bar on every screen after
-sign-in.
+sign-in, and the constellation mesh is behind all of them.
 
 ---
 
@@ -96,7 +99,8 @@ It is not decoration. Every shadcn component is published assuming it:
 
 The equivalent boundary exists in this port: `web/js/components/` holds
 reusable, self-contained pieces (`orbitingCircles`, `particleSphere`);
-`web/js/views/` holds screens (`landing`). Same separation, project-native names.
+`web/js/views/` holds screens (`opening`, `auth`). Same separation, project-native
+names.
 
 ### Where components and styles live here
 
@@ -153,8 +157,8 @@ is the three domains, then quests and skills, then achievements, progress and
 the guide. The particle sphere stays, demoted to a halo behind the mark.
 
 Ring diameters are in `vmin` and sized against the space *left under the copy*,
-not the whole viewport: the widest ring otherwise pushes its lowest seats behind
-the act rail on a short window.
+not the whole viewport: the widest ring otherwise pushes its lowest seats out of
+the card on a short window.
 
 ### Unsplash imagery
 
@@ -167,30 +171,35 @@ landing ships with zero image dependencies beyond the existing local
 
 ## 3. The answers to the integration questions
 
-**What data/props does it take?** `landingView({ onEnter, brandName, tagline1,
-tagline2, cardHeading, cardDescription, metricValue, metricLabel, ctaHeading,
-ctaDescription })` — the same prop set as `CinematicHeroProps`, plus `onEnter`,
-which is called with `'signup'` or `'login'`. `orbitingCircles({ rings, animate,
-sphere, logo, variant, caption })`.
+**What data/props does it take?** It began as `landingView({ onEnter, brandName,
+tagline1, tagline2, cardHeading, cardDescription, metricValue, metricLabel,
+ctaHeading, ctaDescription })` — the same prop set as `CinematicHeroProps`, plus
+`onEnter`. Now that the acts are sections rather than a screen, the props that
+were text the page already owned went with them: `introActs({ metricValue,
+metricLabel, cardHeading, cardDescription })`, and the taglines and the closing
+copy are `openingView`'s. There is no `onEnter` — the acts contain no doors,
+because the page they are in has four. `orbitingCircles({ rings, animate, sphere,
+logo, variant, caption })` is unchanged.
 
-**State management?** None beyond the view. The landing is rendered before any
-session exists, so it reads nothing from the store except the reduced-motion
-preference. No provider, no context, no hook.
+**State management?** None beyond the view. The acts render before any session
+exists, so they read nothing from the store except the reduced-motion preference.
+No provider, no context, no hook.
 
 **Required assets?** None. Emblem aside, everything is drawn.
 
 **Responsive behaviour?**
 
-| Width | Landing |
+| Width | The acts |
 |---|---|
 | ≥ 900px | Three columns: copy, mockup, wordmark. Mockup at full scale. |
 | < 900px | Column: wordmark, mockup, copy — the reorder the original does at the same breakpoint. Mockup at 0.68. |
-| < 560px | Mockup at 0.58, supporting paragraph dropped, CTA buttons stack. |
-| any, `prefers-reduced-motion` | No pin, no scrub: every act laid out as one static scrolling page. |
+| < 560px | Mockup at 0.58, supporting paragraph dropped. |
+| any, `prefers-reduced-motion` | Laid out with no motion at all, and the dial settled rather than left counting from zero. |
 
-**Where does it belong?** One step behind the entry point. The opening page
-(`web/js/views/opening.js`) is what a signed-out visitor gets first; the intro is
-opt-in from its **Watch the two-minute intro** button — see below.
+**Where does it belong?** In the opening page (`web/js/views/opening.js`), after
+the progression loop has been explained and before the case for students — by
+then a reader knows what a quest and a proof are, which is what the mockup is
+showing them. It is not a screen of its own any more; see §3f.
 
 ---
 
@@ -287,59 +296,228 @@ reading matter.
 
 ---
 
+## 3d. `modern-login-signup.tsx`
+
+The fifth component, and the second one to replace something rather than add to
+it: it **is** the sign-in screen now. The layout is the component's — a
+full-bleed animated dot field, a vignette, and one card centred on top of it —
+where the old screen was a split art panel.
+
+It also arrived with the same two blocked dependencies as everything before it,
+plus a new one worth naming. The component does not import `three`; it *injects*
+it, appending a `<script src="https://cdnjs.cloudflare.com/…/three.min.js">` to
+the head on mount. `script-src 'self'` blocks that tag outright, and the
+`onload` handler simply never runs — so the effect would have failed silently
+rather than loudly, leaving a permanently empty canvas over the login form. That
+is the worst of the failure modes seen in this project so far, and the reason
+the port checks that its first frame actually painted before it commits to
+being visible.
+
+So the shader was kept and its host was replaced. three.js contributes four
+things to this effect — a canvas, an orthographic camera that is the identity
+transform for a clip-space quad, a two-triangle plane, and a uniform bag — and
+all four are a few lines of WebGL2 each. `web/js/components/dotMatrix.js` is
+that, with the fragment shader carried over as-is.
+
+**What data/props does it take?** The original takes none — every value is
+hard-coded in the component body. The port takes
+`mountDotMatrix(container, { colors, opacities, totalSize, dotSize, speed,
+scale, blend, animate, maxDpr })`, all defaulted to the original's constants, and
+returns `{ canvas, painted, setPalette, destroy }`.
+
+**State management?** None. `authView` owns the handle and tears it down when
+sign-in succeeds; `ui.js`'s `mount()` clears a view's container without telling
+it, so the loop also stops itself if it ever finds its canvas detached.
+
+**Required assets?** None. Everything is generated, and — as with the landing —
+no Unsplash imagery was used, because `img-src 'self' data: blob:` forbids
+remote images. The only file involved is the existing local `/img/emblem.svg`.
+
+**Responsive behaviour?** One centred column at every width; the field tracks its
+container through a `ResizeObserver`. Below 780px of *height* the supporting
+paragraph is dropped, which is the axis that actually matters for a screen whose
+whole job is to fit a form. Under reduced motion the field paints one settled
+frame and never starts a loop.
+
+Five things differ from the original, each for a reason:
+
+* **No OAuth buttons.** The component stacks Continue with Google / GitHub /
+  Apple, and a Vercel terms-of-service footer. LifeQuest has one credential —
+  username and password, hashed on this machine — and no OAuth of any kind, so
+  all three would have been controls that cannot work, over small print naming
+  a company that has nothing to do with this app. The three promises took the
+  slot under the divider: same rhythm, and true.
+* **highp, not mediump.** `u_resolution` is declared in both shaders, and the
+  original's vertex stage inherits a different default precision than its
+  fragment stage. A precision mismatch on a shared uniform is a **link error**,
+  not a slow path. mediump also only holds integers exactly to 2048, which a
+  2560-wide field in ×2 resolution units is well past.
+* **WebGL2 is required, and its absence is designed for.** The effect indexes
+  two uniform arrays with a computed value (`u_opacities[int(rand * 10.0)]`),
+  which GLSL ES 1.00 does not guarantee. Rather than degrade to a blank
+  rectangle, `.auth__field` draws the same grid as a CSS `radial-gradient`, and
+  the canvas only takes over once it reports that it painted.
+* **The first frame is not the frame it checks.** The effect opens on an empty
+  grid and sweeps outwards from the centre, so at t≈0 a *correct* shader has
+  drawn almost nothing. Probing the first frame reported failure every time; the
+  probe draws a settled frame, reads that, and lets the animation restart.
+* **The palette is the project's, and light mode is a different blend.** The
+  original is white dots on black with `SrcAlpha, One` — additive, which is
+  invisible on a pale ground. Light mode blends the same premultiplied output
+  normally and inks dark dots instead. The colours are the app's, with exactly
+  one of the six seats given to XP gold.
+
+**Where does it belong?** `web/js/views/auth.js`, and nowhere else. The reactive
+orb is still not on this screen — that decision (and its test) predates this
+component and is unchanged; the dot field is a different layer in a different
+container, and a fragment shader on two triangles is not the cost the orb was.
+
+---
+
+## 3e. The decrypt effect, on the front page
+
+The brief that brought the login component in asked for the sign-in screen's text
+transition to be carried over to the landing page's main text. It landed on the
+cinematic's two taglines first; when the acts were folded into the opening page,
+it followed the words rather than staying with the file.
+
+The taglines were, word for word, the opening page's own headline — one `<h1>`
+holding both sentences — so that is where the effect lives now:
+
+| Line | Behaviour |
+|---|---|
+| `.open__headline` — "Real life is the game. You are the main character." | Decrypts on `mount`. One element for both sentences is what makes the sequence work: the glyphs lock left to right across the whole line, so the second sentence resolves after the first on its own, with no second timer to keep in step. |
+| `.open__closinghead` — "Start at level 1." | Decrypts on `inview`. This is where act IV's closing headline went, and it is at the bottom of a long page, so it has to still be unresolved when it is finally reached. |
+
+One CSS consequence is worth knowing about, and it caught both headlines. Each
+paints a vertical gradient with `background-clip: text` **on the element itself**
+— so the cells the decrypt layer builds have to give up their fill entirely and
+let the parent's gradient through their glyphs, or the line is quietly repainted
+flat. Only a *scrambling* glyph paints its own ink, so the boil stays visible
+against the gradient.
+
+`tests/browser/harness.js` asserts this by setting a cell to its settled state and
+reading the computed fill, rather than racing the animation: the states are driven
+by `requestAnimationFrame`, and frame delivery is not dependable under the
+headless virtual clock — the same reason `timeline.js` carries a watchdog.
+
+---
+
+## 3f. `constellation-grid.tsx`
+
+The one component in the set with **no third-party dependency at all** — no gsap,
+no three, no lucide, no remote images. It is React hooks around a 2D canvas, so
+the only things standing between the file and this codebase are React, TypeScript
+and Tailwind, and the port is correspondingly close to the original: same spring
+constants, same damping, same force curve, same radar rings and hex readouts.
+
+It replaces `js/blob.js` as the background of the signed-in app, on the brief that
+a mesh the cursor *shoves* beats an orb that leans towards it. `blob.js` is still
+in the tree and no longer mounted.
+
+**Where the port diverges, and why each one is this codebase rather than taste:**
+
+| Original | Here | Because |
+|---|---|---|
+| reads `prefers-color-scheme` | reads the resolved app theme | the app has three states, not two: a player on **light** with a dark OS would have got a near-black canvas under a white interface |
+| hardcodes `#030407` / `#f8fafc` / sky-cyan | reads `--mesh-node`, `--mesh-accent`, `--mesh-link` | the mesh cannot drift from the palette, and both themes are tuned in `styles.css` beside every other dial |
+| `getContext('2d', { alpha: false })` + `fillRect` | transparent context + `clearRect` | an opaque surface would paint over the drifting halo field at `body::before` that every screen is laid out on |
+| every node against every other | spatial hash, four forward neighbours | 60k distance tests on a laptop is 800k on a 1440p display, every frame, behind every screen |
+| unbounded node count | hard ceiling, pitch widens past it | a 4K display asked for ~3,500 nodes; it now loses density instead of frame rate |
+| `<h1>CONSTELLATION</h1>` over the canvas | dropped | this is a layer under a real interface, so its own headline would sit on top of every screen — the same call the acts made when they dropped the film's HUD |
+| `mouseleave` on `window` | `pointerleave` on the document | the original does not reliably fire, and mouse events ignore pen and touch |
+| speed from the per-frame delta | teleports excluded | the cursor parks at -1000,-1000 while away, so the first step after it returns saw it travel 1000px in 16ms and detonated the lattice |
+| always animates | still frame under `prefers-reduced-motion` | the lattice is legible at rest, so nothing is lost but the movement |
+
+**Tailwind translation.** The wrapper's classes map onto the existing `.appbg`
+layer: `w-full h-screen` becomes `position: fixed; inset: 0`, since this is a
+background rather than a section of a page. `light:bg-slate-50` is not a real
+Tailwind variant and would never have applied; the equivalent lives in
+`:root[data-theme="light"] .appbg`. `mix-blend-difference` went with the headline.
+
+**Contrast ceiling.** Every card in the app is translucent, so the layer is held
+at `--orb-opacity` — .34 dark, .26 light — which is the point at which the lattice
+is clearly there and body copy on a card above it still passes. That is the same
+constraint the orb was tuned against, and the same dial.
+
+**One test seam.** `mountConstellation` returns a `tick(seconds)` that advances the
+simulation one step outside the frame loop, and `appBackground` publishes the
+handle on the layer. The browser suite needs it: an automated Chrome delivered
+**three** animation frames for an entire run, so a test that swept the pointer and
+waited for real frames would have been measuring that browser's scheduler rather
+than the physics. `router.js` already exposes `lifequest:rendered` to the same
+suite for the same kind of reason.
+
+---
+
 ## 4. How it is wired in
 
 `web/js/main.js`:
 
 ```
 boot() → no session? → renderOpening()  →  onEnter('signup' | 'login') → renderAuth(mode)
-                                        →  onIntro() → renderLanding() → onEnter(...) → renderAuth
        → session, not onboarded         →  renderOnboarding()
        → session, onboarded             →  enterApp()
 ```
 
-Signed-in players never see the intro, and neither does a signed-out visitor who
-does not ask for it: the opening page is the first screen, and the cinematic is
-one button at the bottom of it. A session that expires mid-visit drops to sign-in
-directly, not into a cinematic.
-
-The intro is skippable from the very first frame — the HUD's **Skip intro**
-button and the <kbd>Esc</kbd> key both go straight to sign-up — so nobody has to
-sit through 4 acts to reach the product.
+There is one signed-out screen now. `renderLanding` is gone, and so is the route
+it rendered: a signed-out visitor gets the opening page, reads down through the
+acts if they keep scrolling, and leaves by one of the four doors on it. A session
+that expires mid-visit drops to sign-in directly.
 
 ### The four acts
 
-| Progress | Act | What happens |
-|---|---|---|
-| 0.00 – 0.17 | I — The call | Headline decrypts, then blurs back as the card rises from below |
-| 0.17 – 0.50 | II — The system | Card fills the screen; mockup flies in, dial counts to level, badges pop, wordmark and copy slide in |
-| 0.56 – 0.86 | III — The constellation | The rings rise around the LifeQuest mark: the motto as the heading, the three goals named, every system orbiting the logo |
-| 0.86 – 1.00 | IV — Character creation | Card pulls back and leaves; the two doors into the app are underneath |
+| Act | Where it is now |
+|---|---|
+| I — The call | Merged into the opening hero, which already said the same words. It kept the decrypt. |
+| II — The system | A section: the mockup flies in, the dial counts to level, badges pop, wordmark and copy slide in. |
+| III — The constellation | A section: the rings rise around the mark, the motto as the heading, the three goals named. |
+| IV — Character creation | Merged into the opening page's closing section, which already was a headline and the two doors. It took the decrypt. |
 
-### The game layer
+Acts II and III animate against their own trip through the viewport rather than a
+shared 0→1 track — `throughViewport` in `web/js/timeline.js`, passed to
+`scrollScrub` as its `measure`. That is the one substantive change to the motion.
+On a single track each act had to clear the stage for the next one, so every act
+had an exit as well as an entrance; a section that faded out as you scrolled past
+it would just be content you cannot read, so each act now arrives and stays. The
+`from`/`to` values and the eases are the film's, untouched.
 
-The brief asked for it to feel more like a game, so the frame is a HUD: corner
-brackets, a `LV 1 → 100` chip, and a bottom rail that reports progress through
-the intro as an **XP bar with an act marker for each milestone**. Crossing an
-act lights its marker, flashes the act name, announces it to screen readers, and
-plays the app's own level-up chime (only after a real user gesture — browsers
-block audio before one, and a page that beeps unprompted deserves the block).
+### What went with the film
+
+The HUD, the corner brackets, the `LV 1 → 100` chip, the act rail with its live
+percentage, the **Skip intro** button, <kbd>Esc</kbd>-to-skip, and the level-up
+chime at each act boundary. All of it existed to make a film feel like a film you
+could get out of. A page needs none of it: there is nothing to skip, the doors are
+in the first viewport, and a page that plays a chime at you while you scroll is a
+page people close. Roughly 240 lines of CSS went with them.
 
 ---
 
 ## 5. Verification
 
 ```bash
-python tests/browser_e2e.py     # 63 assertions, real clicks in headless Chrome
+python tests/browser_e2e.py     # 66 assertions, real clicks in headless Chrome
 ```
 
-Six of those cover the cinematic itself: the card mounts, the rings build (16
-seats), the particle canvas mounts, scrubbing the intro reaches the final act, and
-the closing call to action is revealed and leads into sign-up. Eight more cover
-the opening page in front of it: it renders first, leads with the tagline, is
+Eight cover the opening page: it renders first, leads with the tagline, is
 addressed to students, offers both doors in the first screen, names the three
-domains, spells out the evidence-before-XP loop, lists the student values, and
-hands over to the intro on request.
+domains, spells out the evidence-before-XP loop, and lists the student values.
+
+Ten cover the acts now inside it: there is no intro button and no separate intro
+screen left to launch, both acts are part of the page, the mockup mounts inline,
+the rings build (16 seats), the particle canvas mounts, the constellation turns
+around the logo, the three goals are named, the headline decrypts and exposes its
+readable string, it keeps its gradient through the decrypt layer, and — the one
+that actually proves the motion runs — **scrolling to an act drives it**: the
+harness scrolls the mockup act into view and waits for the dial to leave zero.
+Markup assertions cannot tell a working scrub from a dead one, so this is the
+assertion that would have caught the whole feature failing.
+
+Four cover the login port: the dot field's layer is present (and reports which of
+the shader and the CSS fallback is live), the card is centred on it, the orb is
+still absent, and the login artwork is there. The layer is what is asserted rather
+than the canvas — the run is headless with `--disable-gpu`, so WebGL2 may or may
+not exist there, and the fallback is a supported outcome rather than a failure.
 
 The suite also still proves the whole original journey — sign-up, onboarding,
 every nav route, quest completion with evidence — from behind the new front

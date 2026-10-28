@@ -23,6 +23,19 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
+-- Password recovery. Only the hash of a code is ever stored, exactly as for a
+-- session token: a stolen database yields no usable codes. Rows are single-use
+-- and short-lived, and `used_at` is kept rather than deleted so a code cannot be
+-- replayed inside its own expiry window.
+CREATE TABLE IF NOT EXISTS password_resets (
+    code_hash       TEXT    PRIMARY KEY,
+    user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at      TEXT    NOT NULL,
+    expires_at      TEXT    NOT NULL,
+    used_at         TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_resets_user ON password_resets(user_id);
+
 CREATE TABLE IF NOT EXISTS player_profiles (
     user_id             INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
     level               INTEGER NOT NULL DEFAULT 1,

@@ -83,7 +83,7 @@ export async function characterView() {
             meter(path.interest * 100, 'passion', 'Interest', `${Math.round(path.interest * 5)}/5`),
             el('p', { class: 'dim', style: { margin: '8px 0 0', fontSize: '12.5px' },
                       text: `${path.sessions} session${path.sessions === 1 ? '' : 's'}` }))))
-        : emptyState('🧭', 'No passion paths yet',
+        : emptyState('compass', 'No passion paths yet',
           'Complete an exploration quest and name the field you tried — paths you keep returning to graduate to "pursuing".')),
 
     el('section', { class: 'card' },
@@ -97,7 +97,7 @@ export async function characterView() {
                 chip(DOMAIN_LABEL[quest.domain], quest.domain), ' ',
                 el('span', { text: quest.title })),
               el('span', { class: 'dim num', text: relativeTime(quest.completedAt) }))))
-        : emptyState('📜', 'Nothing completed yet',
+        : emptyState('scroll', 'Nothing completed yet',
           'Your verified quests will build a history here.')),
 
     el('section', { class: 'card' },

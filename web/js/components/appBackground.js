@@ -1,39 +1,35 @@
-// APP BACKGROUND — the reactive orb, behind the whole signed-in app.
+// APP BACKGROUND — the constellation mesh, behind the whole signed-in app.
 //
-// One fixed layer under every screen (home included), holding the WebGL orb from
-// blob.js. It is mounted when a player enters the app and torn down whenever the
-// shell goes bare — the opening page, the cinematic, sign-in and onboarding all
-// have their own artwork and are none of its business.
+// One fixed layer under every screen (home included), holding the spring mesh
+// from components/constellationGrid.js. It is mounted when a player enters the
+// app and torn down whenever the shell goes bare — the opening page, sign-in and
+// onboarding all have their own artwork and are none of its business.
 //
-// Two things make it a *background* rather than the login page's decoration:
+// This was the WebGL orb from blob.js until the mesh replaced it. The orb leaned
+// towards the pointer; the mesh is shoved by it, and a fast sweep throws a
+// shockwave the width of the screen. Both are backgrounds rather than
+// decorations for the same two reasons:
 //
 //   * the pointer is read from the window, because a layer behind the content
 //     never receives pointer events of its own; and
-//   * `reach: 'viewport'` lets the orb travel the entire surface instead of a
-//     unit box in the middle of it, so it genuinely follows the cursor into the
-//     corners of the page rather than leaning slightly towards it.
+//   * nothing about the reaction is clamped to a box in the middle of the page,
+//     so the effect genuinely reaches the corners.
 //
-// It degrades to nothing: no WebGL, or a first frame that drew no pixels, and the
-// layer removes itself, leaving the CSS colour field that was always there.
+// It degrades to nothing: no 2D context, or a first frame that drew no pixels,
+// and the canvas is dropped, leaving the CSS colour field and the cursor
+// highlight that were always there and need no GPU at all.
 
-import { mountBlob } from '../blob.js';
-import { onThemeChange, resolveTheme } from '../theme.js';
+import { mountConstellation } from './constellationGrid.js';
+import { motionAllowed } from '../motion.js';
+import { onThemeChange } from '../theme.js';
 import { el, whenSized } from '../ui.js';
 
-// The app's own accents, in the order the shader blends them (base → mid →
-// crown). The light set is the darkened palette from styles.css: the same three
-// ideas at a weight that reads against white instead of against near-black.
-const PALETTE = {
-  dark: ['#ffcf5c', '#bd85ff', '#56d0f5'],
-  light: ['#e2a52f', '#7534c9', '#0b76ad'],
-};
-
 let layer = null;
-let blob = null;
+let mesh = null;
 let stopTheme = null;
 let onPointerMove = null;
 
-/** Mount the orb behind the app. Idempotent. */
+/** Mount the mesh behind the app. Idempotent. */
 export function mountAppBackground() {
   if (layer) return;
 
@@ -42,8 +38,9 @@ export function mountAppBackground() {
   document.body.append(node);
 
   // The cursor position is mirrored onto the layer as custom properties so the
-  // CSS can put a soft highlight where the pointer is — the same gesture as the
-  // landing card's sheen, and it keeps working even if WebGL is unavailable.
+  // CSS can put a soft highlight where the pointer is. The mesh does its own
+  // pointer tracking on the canvas; this is what carries the gesture when there
+  // is no canvas at all.
   onPointerMove = (event) => {
     if (!layer) return;
     layer.style.setProperty('--orb-x', `${event.clientX}px`);
@@ -57,37 +54,58 @@ export function mountAppBackground() {
   whenSized(node, () => {
     // The wait is polled, so the shell can have gone bare — or gone and come
     // back — in the meantime. Only the layer that is still the current one gets
-    // a GL context.
+    // a canvas.
     if (layer !== node) return;
-    blob = mountBlob(node, {
-      colors: PALETTE[resolveTheme()] || PALETTE.dark,
-      pointerSource: window,
-      reach: 'viewport',
-      // Bigger and calmer than the login artwork was: it is scenery now, and a
-      // background that churns is a background you end up fighting.
-      scale: 2.2,
-      intensity: 0.36,
-      hoverIntensity: 0.52,
-      // The orb is blurred and dimmed in CSS, so it has nothing to gain from a
-      // retina framebuffer and a full-viewport canvas has plenty to lose.
-      maxDpr: 1,
+    mesh = mountConstellation(node, {
+      // Scenery, not an object: a slightly wider pitch than the demo's 55 keeps
+      // the lattice quiet enough to sit under body copy, and the links still
+      // reach because the link distance went with it.
+      spacing: 62,
+      linkDistance: 84,
+      reach: 240,
+      // The lines are sub-pixel and the readouts are 8px, so unlike the orb —
+      // which was blurred and had nothing to gain from a retina framebuffer —
+      // this needs the real resolution to look like anything.
+      maxDpr: 2,
+      // Under reduced motion the lattice is drawn once, at rest. It is perfectly
+      // legible as a still image, so nothing is lost but the movement.
+      animate: motionAllowed(),
     });
 
-    if (!blob || !blob.painted) {
+    if (!mesh || !mesh.painted) {
       // No context, or a first frame that put nothing on screen. Drop the canvas
-      // rather than leave a blank rectangle over the gradient, and keep the layer
-      // for the cursor highlight, which needs no GPU at all.
-      blob?.destroy();
-      blob = null;
+      // rather than leave a blank rectangle over the interface, and keep the
+      // layer for the cursor highlight.
+      mesh?.destroy();
+      mesh = null;
       node.classList.add('appbg--flat');
       return;
     }
     node.classList.add('appbg--live');
-    stopTheme = onThemeChange((resolved) => blob?.setColors(PALETTE[resolved]));
+    // Published on the layer so the browser suite can step the simulation itself.
+    // It has to: an automated Chrome delivers only a few animation frames per
+    // run, so asserting on real ones would test that browser's scheduler rather
+    // than the mesh. The router already exposes `lifequest:rendered` for the same
+    // suite and the same reason.
+    node.mesh = mesh;
+    // The mesh reads its palette from CSS custom properties, so a theme change
+    // only has to tell it to look again.
+    stopTheme = onThemeChange(() => mesh?.setTheme());
   });
 }
 
-/** Remove the orb. Safe to call when it was never mounted. */
+/**
+ * Tell the mesh to re-read its colours from CSS.
+ *
+ * The palette lives in custom properties, so anything that changes those — a
+ * theme switch, or mission mode reddening the whole app while a quest runs —
+ * only has to say "look again" rather than know anything about the mesh.
+ */
+export function retintAppBackground() {
+  mesh?.setTheme();
+}
+
+/** Remove the mesh. Safe to call when it was never mounted. */
 export function unmountAppBackground() {
   if (onPointerMove) {
     window.removeEventListener('pointermove', onPointerMove);
@@ -95,8 +113,9 @@ export function unmountAppBackground() {
   }
   stopTheme?.();
   stopTheme = null;
-  blob?.destroy();
-  blob = null;
+  mesh?.destroy();
+  mesh = null;
+  if (layer) layer.mesh = null;
   layer?.remove();
   layer = null;
 }

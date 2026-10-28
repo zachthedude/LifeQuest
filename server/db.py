@@ -152,7 +152,7 @@ def _seed_catalogs(conn: sqlite3.Connection) -> None:
                      requirement=excluded.requirement, tier=excluded.tier, icon=excluded.icon""",
                 (
                     ach["key"], ach["name"], ach["description"],
-                    ach["requirement"], ach.get("tier", "bronze"), ach.get("icon", "★"),
+                    ach["requirement"], ach.get("tier", "bronze"), ach.get("icon", "star"),
                 ),
             )
         conn.execute("COMMIT")

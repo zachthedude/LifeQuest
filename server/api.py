@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import logging
+import time
 from datetime import datetime, timezone
 from email.parser import BytesParser
 from email.policy import default as email_policy
@@ -16,6 +18,7 @@ from .game import xp as xp_mod
 from .routing import HttpError, Request, Response, Router
 
 router = Router()
+log = logging.getLogger("lifequest.api")
 
 
 # ------------------------------------------------------------------ helpers --
@@ -111,6 +114,66 @@ def login(request: Request) -> Response:
                             bool(row["onboarded"]))
     return Response.json(payload, headers={
         "set-cookie": _session_cookie(token, config.SESSION_DAYS * 86400)})
+
+
+@router.post("/api/auth/recover", auth=False, bucket="auth")
+def recover(request: Request) -> Response:
+    """Start a password reset.
+
+    LifeQuest has no mail server, and the front page promises it never asks for
+    an email address — so there is nowhere to send a link to, and inventing one
+    would be a lie about where the data goes. The code is written to the server
+    log instead: the terminal running `python run.py`, which on a machine the
+    player owns is the most private channel available and needs no third party.
+
+    The response never says whether the account exists. Someone who can guess
+    usernames must not be able to turn this into a list of real ones.
+    """
+    data = _body(request)
+    username = security.clean_text(str(data.get("username") or ""), 24)
+    row = db.query_one("SELECT id, username FROM users WHERE username=?", (username,))
+    if row is not None:
+        code = security.create_reset_code(int(row["id"]))
+        log.warning(
+            "PASSWORD RESET for %s - code %s (valid %d minutes). "
+            "If you did not ask for this, ignore it; the code expires on its own.",
+            row["username"], code, security.RESET_MINUTES,
+        )
+    return Response.json({
+        "ok": True,
+        "sent": "server-log",
+        "expiresInMinutes": security.RESET_MINUTES,
+        "message": ("If that account exists, a recovery code has been printed in the "
+                    "terminal running the LifeQuest server."),
+    })
+
+
+@router.post("/api/auth/reset", auth=False, bucket="auth")
+def reset_password(request: Request) -> Response:
+    """Finish a password reset: right code, new password, everyone signed out."""
+    data = _body(request)
+    username = security.clean_text(str(data.get("username") or ""), 24)
+    code = str(data.get("code") or "")
+    password = str(data.get("password") or "")
+
+    problem = security.password_problem(password)
+    if problem:
+        raise HttpError(400, "invalid_password", problem)
+
+    user_id = security.consume_reset_code(username, code)
+    if user_id is None:
+        # One message for an unknown account, a wrong code and an expired one:
+        # each of the three would otherwise be a different piece of information
+        # about somebody else's account.
+        raise HttpError(400, "invalid_code",
+                        "That code is not valid, or it has expired. Ask for a new one.")
+
+    security.set_password(user_id, password)
+    log.info("Password reset completed for user %s", user_id)
+    return Response.json({
+        "ok": True,
+        "message": "Password changed. Sign in with your new password.",
+    })
 
 
 @router.post("/api/auth/logout", auth=False, bucket="write")
@@ -373,11 +436,13 @@ def generate_quest(request: Request) -> Response:
     if kind == "milestone" and not skills_mod.has_capability(snapshot["level"], "advanced_quests"):
         raise HttpError(403, "locked", "Milestone quests unlock at level 10.")
 
-    quest = quests_mod.generate_one(user_id, domain, kind, salt=str(datetime.now().timestamp()))
+    quest = quests_mod.generate_one(
+        user_id, domain, kind, salt=str(datetime.now().timestamp()),
+        deadline=time.monotonic() + config.AI_QUEST_BUDGET)
     if quest is None:
         raise HttpError(409, "no_quest_available",
-                        "No new quest archetypes are available in that domain right now. "
-                        "Finish or abandon an open one first.")
+                        f"There are no {kind} archetypes in that domain at your level yet. "
+                        "Try another domain, or level up to unlock more.")
     return Response.json({"quest": quest, "snapshot": player.snapshot(user_id)}, status=201)
 
 
@@ -450,14 +515,13 @@ def submit_quest(request: Request) -> Response:
 
     payload = {
         "text": security.clean_text(data.get("text"), 4000),
-        "reflection": security.clean_text(data.get("reflection"), 4000),
         "link": security.safe_url(data.get("link") or ""),
         "structured": structured,
         "files": files,
         "submittedAt": _now(),
     }
 
-    if not any([payload["text"], payload["reflection"], payload["link"], files, structured]):
+    if not any([payload["text"], payload["link"], files, structured]):
         raise HttpError(400, "empty_proof",
                         "Submit at least a short description of what you did.")
 
@@ -480,8 +544,9 @@ def create_custom_quest(request: Request) -> Response:
         "difficulty": data.get("difficulty", 2),
         "estimatedTime": data.get("estimatedTime", 30),
         "completionCriteria": security.clean_text(data.get("completionCriteria"), 300),
-        "proofType": [p for p in (data.get("proofType") or ["text", "reflection"])
-                      if p in ("text", "photo", "document", "link", "reflection", "structured")],
+        "proofType": [p for p in (data.get("proofType") or ["text", "photo"])
+                      if p in ("text", "photo", "video", "document", "link",
+                               "structured")],
     }
     result = quests_mod.create_custom(user_id, spec)
     if not result.get("ok"):
@@ -608,8 +673,8 @@ def upload(request: Request) -> Response:
     content_type = request.header("content-type")
     if "multipart/form-data" not in content_type:
         raise HttpError(400, "invalid_upload", "Upload must be multipart/form-data.")
-    if len(request.body) > config.MAX_UPLOAD_BYTES + 4096:
-        raise HttpError(413, "too_large", "That file is too large (8 MB maximum).")
+    if len(request.body) > config.MAX_VIDEO_BYTES + 4096:
+        raise HttpError(413, "too_large", "That file is too large.")
 
     raw = b"Content-Type: " + content_type.encode() + b"\r\nMIME-Version: 1.0\r\n\r\n" + request.body
     message = BytesParser(policy=email_policy).parsebytes(raw)
@@ -623,7 +688,8 @@ def upload(request: Request) -> Response:
         if meta is None:
             raise HttpError(
                 400, "unsupported_file",
-                "Supported files: PNG, JPEG, WebP, GIF, PDF, TXT and MD, up to 8 MB.")
+                "Supported files: PNG, JPEG, WebP, GIF, PDF, TXT and MD up to 8 MB, "
+                "or WebM/MP4 video up to 32 MB.")
         stored.append(meta)
 
     if not stored:
@@ -640,7 +706,8 @@ def serve_upload(request: Request) -> Response:
     suffix = path.suffix.lower()
     types = {".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp",
              ".gif": "image/gif", ".pdf": "application/pdf", ".txt": "text/plain",
-             ".md": "text/plain"}
+             ".md": "text/plain", ".webm": "video/webm", ".mp4": "video/mp4",
+             ".mov": "video/quicktime"}
     return Response(
         status=200,
         body=path.read_bytes(),

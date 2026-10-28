@@ -7,6 +7,8 @@ import { navigate, onNavigate, register, render, setNotFound, start } from './ro
 import { el, emptyState, meter, modal, mount, toast } from './ui.js';
 
 import { mountAppBackground, unmountAppBackground } from './components/appBackground.js';
+import { sweepDrafts } from './components/proofDraft.js';
+import { startQuestClock, stopQuestClock } from './components/questClock.js';
 import { icon } from './components/icons.js';
 import { limelightNav } from './components/limelightNav.js';
 import { themeButton } from './components/themeControl.js';
@@ -19,7 +21,6 @@ import { guideView } from './views/guide.js';
 import { achievementsView } from './views/achievements.js';
 import { settingsView } from './views/settings.js';
 import { authView } from './views/auth.js';
-import { landingView } from './views/landing.js';
 import { openingView } from './views/opening.js';
 import { onboardingView } from './views/onboarding.js';
 
@@ -95,8 +96,9 @@ function buildChrome() {
   railLevel = el('div', { class: 'rail__level' });
 
   mount(sidenav,
-    el('a', { class: 'rail__brand', href: '#/', 'aria-label': 'LifeQuest home' },
-      el('img', { class: 'brand__mark', src: '/img/emblem.svg', alt: '',
+    el('a', { class: 'rail__brand', href: '#/welcome',
+              'aria-label': 'LifeQuest — about this game' },
+      el('img', { class: 'brand__mark', src: 'img/emblem.svg', alt: '',
                   width: '32', height: '32' })),
     rail.node,
     el('div', { class: 'nav-spacer' }),
@@ -128,6 +130,10 @@ function resetChrome() {
   railLevel = null;
 }
 
+// Screens that own the whole viewport and bring their own artwork, so the rail,
+// topbar and tab bar step out of the way for them.
+const BARE_ROUTES = new Set(['/welcome']);
+
 function paintChrome(current) {
   const snapshot = state.snapshot;
   const sidenav = document.getElementById('sidenav');
@@ -158,8 +164,12 @@ function paintChrome(current) {
     : null);
 
   mount(topbar,
-    el('a', { class: 'topbar__brand', href: '#/', 'aria-label': 'LifeQuest home' },
-      el('img', { class: 'brand__mark', src: '/img/emblem.svg', alt: '', width: '28', height: '28' }),
+    // The mark goes to the front page, not to the dashboard. Home for a player
+    // is their character; the wordmark is the product's own page, and that is
+    // what a logo is for — the dashboard already has a nav item of its own.
+    el('a', { class: 'topbar__brand', href: '#/welcome',
+              'aria-label': 'LifeQuest — about this game' },
+      el('img', { class: 'brand__mark', src: 'img/emblem.svg', alt: '', width: '28', height: '28' }),
       el('b', { class: 'topbar__name', text: 'LifeQuest' })),
     snapshot
       ? el('div', { class: 'topbar__xp' },
@@ -169,8 +179,9 @@ function paintChrome(current) {
             : `${snapshot.xp.xpIntoLevel.toLocaleString()} / ${snapshot.xp.xpForNextLevel.toLocaleString()} XP`))
       : null,
     el('div', { class: 'row topbar__actions' },
-      snapshot ? el('span', { class: 'chip chip--xp', title: 'Current streak',
-                              text: `🔥 ${snapshot.streak.current}` }) : null,
+      snapshot ? el('span', { class: 'chip chip--xp', title: 'Current streak' },
+        icon('flame', { size: 14 }),
+        el('span', { text: String(snapshot.streak.current) })) : null,
       themeButton(),
       state.unreadNotifications
         ? el('button', {
@@ -196,17 +207,25 @@ function showShell(visible, bare = false) {
   app.hidden = !visible;
   app.classList.toggle('app--bare', bare);
   document.body.classList.toggle('body--bare', bare);
-  // The orb belongs to the app chrome. Every bare screen — opening, cinematic,
-  // sign-in, onboarding — has its own artwork and gets the plain colour field, so
-  // one call here covers all of them rather than four call sites that can drift.
-  if (bare) unmountAppBackground();
+  // The orb belongs to the app chrome. Every bare screen — opening, sign-in,
+  // onboarding — has its own artwork and gets the plain colour field, so one call
+  // here covers all of them rather than three call sites that can drift.
+  if (bare) {
+    unmountAppBackground();
+    stopQuestClock();
+  }
 }
 
 /** Enter the playable app. Called from every entry path. */
 async function enterApp() {
+  // Drafts of quests that expired weeks ago have no owner left to claim them.
+  sweepDrafts();
   await Promise.all([refreshPlayer(), refreshQuests(), refreshNotifications()]);
   showShell(true, false);
   mountAppBackground();
+  // Mission mode belongs to the playable app: it watches the store and takes
+  // the background over for as long as a quest is active.
+  startQuestClock();
   if (!window.location.hash || window.location.hash === '#') {
     window.location.replace('#/');
   }
@@ -227,33 +246,18 @@ function renderAuth(mode = 'signup') {
 }
 
 /**
- * The cinematic intro. Reached from the opening page's "watch the intro"
- * button; the HUD's skip button and both closing buttons hand straight over to
- * sign-in, so nobody has to sit through it to reach the product.
- */
-function renderLanding() {
-  showShell(true, true);
-  // A reload part-way down the intro would otherwise restore the old scroll
-  // position and drop you into the middle of act III with no context.
-  if ('scrollRestoration' in window.history) window.history.scrollRestoration = 'manual';
-  window.scrollTo(0, 0);
-  mount(document.getElementById('main'), landingView({ onEnter: renderAuth }));
-}
-
-/**
- * The front door. A signed-out visitor sees this first — a still page that says
- * what LifeQuest is for and offers the two ways in. The home screen is the
- * dashboard, which lives behind sign-in; the cinematic intro is one click away
- * at the bottom of this page for anyone who wants the long version.
+ * The front door. A signed-out visitor sees this first — the page that says what
+ * LifeQuest is for and offers the two ways in. The home screen is the dashboard,
+ * which lives behind sign-in.
+ *
+ * The cinematic intro used to be a second screen behind a button here. Its acts
+ * are sections of this page now, so there is one way in and one page to read.
  */
 function renderOpening() {
   showShell(true, true);
   if ('scrollRestoration' in window.history) window.history.scrollRestoration = 'manual';
   window.scrollTo(0, 0);
-  mount(document.getElementById('main'), openingView({
-    onEnter: renderAuth,
-    onIntro: renderLanding,
-  }));
+  mount(document.getElementById('main'), openingView({ onEnter: renderAuth }));
 }
 
 function renderOnboarding() {
@@ -275,14 +279,32 @@ function registerRoutes() {
   register('/guide', guideView);
   register('/achievements', achievementsView);
   register('/settings', settingsView);
-  setNotFound(() => Promise.resolve(emptyState('🧭', 'Screen not found',
+  // The front page, reachable from the logo at any time. Signed out it is the
+  // first thing anyone sees; signed in it is the page about the product, and it
+  // offers a way back to the character rather than two ways to sign up.
+  register('/welcome', () => Promise.resolve(openingView({
+    onEnter: renderAuth,
+    resumeHref: state.user?.onboarded ? '#/' : null,
+  })));
+  setNotFound(() => Promise.resolve(emptyState('compass', 'Screen not found',
     'That page does not exist in this build.',
     el('a', { class: 'btn btn--primary', href: '#/', text: 'Back to home' }))));
 }
 
 async function boot() {
   registerRoutes();
-  onNavigate((path) => paintChrome(path));
+  onNavigate((path) => {
+    // The front page is a route now, so it has to be able to strip the chrome on
+    // the way in and put it back on the way out — a signed-in player reaches it
+    // from the logo and leaves through one of its own doors.
+    if (BARE_ROUTES.has(path)) {
+      showShell(true, true);
+      return;
+    }
+    showShell(true, false);
+    mountAppBackground();
+    paintChrome(path);
+  });
   subscribe(() => paintChrome(window.location.hash.replace(/^#/, '').split('?')[0] || '/'));
 
   try {
@@ -290,7 +312,7 @@ async function boot() {
   } catch (error) {
     document.getElementById('boot').hidden = true;
     showShell(true, true);
-    mount(document.getElementById('main'), emptyState('🔌', 'Cannot reach LifeQuest',
+    mount(document.getElementById('main'), emptyState('plug', 'Cannot reach LifeQuest',
       'The server is not responding. Check that it is running, then reload.',
       el('button', { class: 'btn btn--primary', text: 'Reload',
                      onClick: () => window.location.reload() })));

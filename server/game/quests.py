@@ -7,9 +7,11 @@
 from __future__ import annotations
 
 import json
+import threading
+import time
 from datetime import datetime, timedelta, timezone
 
-from .. import db
+from .. import config, db
 from ..ai import difficulty as difficulty_mod
 from ..ai import guide as guide_mod
 from ..ai import proof_evaluator, quest_generator
@@ -21,6 +23,24 @@ DAILY_BASE_SLOTS = 3          # one per domain
 WEEKLY_SLOTS = 1
 DAILY_EXPIRY_HOURS = 36
 WEEKLY_EXPIRY_DAYS = 8
+
+# Generation reads the player's open quests, decides, and only then writes. Two
+# requests overlapping in that window both see the same "nothing open yet" and
+# both issue the same archetype — which is exactly what a player does when a
+# slow generate makes them press the button again. Serialising per player closes
+# the window; the lock is only ever held by one player's generation, so a slow
+# model call cannot block anyone else.
+_generation_locks: dict[int, threading.Lock] = {}
+_locks_guard = threading.Lock()
+
+
+def _generation_lock(user_id: int) -> threading.Lock:
+    with _locks_guard:
+        lock = _generation_locks.get(user_id)
+        if lock is None:
+            lock = threading.Lock()
+            _generation_locks[user_id] = lock
+        return lock
 
 
 def _now() -> str:
@@ -151,7 +171,14 @@ def _has_open(user_id: int, kind: str) -> int:
 
 
 def generate_one(user_id: int, domain: str, kind: str = "daily",
-                 use_model: bool = True, salt: str = "") -> dict | None:
+                 use_model: bool = True, salt: str = "",
+                 deadline: float | None = None) -> dict | None:
+    with _generation_lock(user_id):
+        return _generate_one_locked(user_id, domain, kind, use_model, salt, deadline)
+
+
+def _generate_one_locked(user_id: int, domain: str, kind: str, use_model: bool,
+                         salt: str, deadline: float | None) -> dict | None:
     snapshot = player.snapshot(user_id)
     model = player.get_model(user_id)
     level = snapshot["level"]
@@ -160,7 +187,7 @@ def generate_one(user_id: int, domain: str, kind: str = "daily",
 
     spec = quest_generator.generate(
         user_id, domain, kind, level, model, snapshot, unlocked_tags,
-        difficulty_offset=offset, use_model=use_model, salt=salt)
+        difficulty_offset=offset, use_model=use_model, salt=salt, deadline=deadline)
     if spec is None:
         return None
     quest_id = insert_quest(user_id, spec)
@@ -168,44 +195,53 @@ def generate_one(user_id: int, domain: str, kind: str = "daily",
 
 
 def ensure_daily_set(user_id: int, use_model: bool = True) -> list[dict]:
-    """Guarantee the player has today's quests (§41 / §15)."""
-    expire_stale(user_id)
-    snapshot = player.snapshot(user_id)
-    level = snapshot["level"]
-    extra_slots = snapshot["skillEffects"]["questSlots"]
+    """Guarantee the player has today's quests (§41 / §15).
 
-    existing = open_quests(user_id)
-    open_by_domain = {"physical": 0, "academic": 0, "passion": 0}
-    for quest in existing:
-        if quest["kind"] == "daily":
-            open_by_domain[quest["domain"]] += 1
+    The whole set is generated under one lock and one clock: the lock so a
+    double-tap cannot produce two sets, and the clock so a set is bounded by
+    `AI_QUEST_BUDGET` no matter how slow the model is. Quests past the budget
+    are rendered locally rather than dropped — the player always leaves with a
+    full set.
+    """
+    with _generation_lock(user_id):
+        expire_stale(user_id)
+        snapshot = player.snapshot(user_id)
+        level = snapshot["level"]
+        extra_slots = snapshot["skillEffects"]["questSlots"]
+        deadline = time.monotonic() + config.AI_QUEST_BUDGET if use_model else None
 
-    created: list[dict] = []
-    for domain in ("physical", "academic", "passion"):
-        if open_by_domain[domain] == 0:
-            quest = generate_one(user_id, domain, "daily", use_model=use_model)
+        existing = open_quests(user_id)
+        open_by_domain = {"physical": 0, "academic": 0, "passion": 0}
+        for quest in existing:
+            if quest["kind"] == "daily":
+                open_by_domain[quest["domain"]] += 1
+
+        created: list[dict] = []
+        for domain in ("physical", "academic", "passion"):
+            if open_by_domain[domain] == 0:
+                quest = _generate_one_locked(user_id, domain, "daily", use_model, "", deadline)
+                if quest:
+                    created.append(quest)
+
+        if extra_slots > 0:
+            attrs = snapshot["attributes"]
+            weakest = sorted(("physical", "academic", "passion"), key=lambda d: attrs[d])[0]
+            for index in range(extra_slots):
+                if _has_open(user_id, "daily") >= DAILY_BASE_SLOTS + extra_slots:
+                    break
+                quest = _generate_one_locked(user_id, weakest, "daily", use_model,
+                                             f"bonus{index}", deadline)
+                if quest:
+                    created.append(quest)
+
+        if skills_mod.has_capability(level, "weekly_quests") and _has_open(user_id, "weekly") == 0:
+            attrs = snapshot["attributes"]
+            weakest = sorted(("physical", "academic", "passion"), key=lambda d: attrs[d])[0]
+            quest = _generate_one_locked(user_id, weakest, "weekly", use_model, "", deadline)
             if quest:
                 created.append(quest)
 
-    if extra_slots > 0:
-        attrs = snapshot["attributes"]
-        weakest = sorted(("physical", "academic", "passion"), key=lambda d: attrs[d])[0]
-        for index in range(extra_slots):
-            if _has_open(user_id, "daily") >= DAILY_BASE_SLOTS + extra_slots:
-                break
-            quest = generate_one(user_id, weakest, "daily", use_model=use_model,
-                                 salt=f"bonus{index}")
-            if quest:
-                created.append(quest)
-
-    if skills_mod.has_capability(level, "weekly_quests") and _has_open(user_id, "weekly") == 0:
-        attrs = snapshot["attributes"]
-        weakest = sorted(("physical", "academic", "passion"), key=lambda d: attrs[d])[0]
-        quest = generate_one(user_id, weakest, "weekly", use_model=use_model)
-        if quest:
-            created.append(quest)
-
-    return created
+        return created
 
 
 def starter_quests(user_id: int) -> list[dict]:
@@ -224,7 +260,7 @@ def starter_quests(user_id: int) -> list[dict]:
         "estimatedTime": 15,
         "xpReward": xp_mod.quest_xp_reward(1, "daily", 1, 15),
         "requirements": [],
-        "proofType": ["text", "reflection"],
+        "proofType": ["text", "photo"],
         "skills": [],
         "levelRequirement": 1,
         "aiEvaluationCriteria": ["Describes a real 15-minute activity",
@@ -430,7 +466,7 @@ def _track_passion(user_id: int, quest: dict, payload: dict) -> dict | None:
                                           notes, created_at, updated_at)
                VALUES (?,?,?,?,?,?,?,?)""",
             (user_id, name, "exploring", interest_score, 1,
-             (payload.get("reflection") or "")[:500], _now(), _now()),
+             (payload.get("link") or "")[:500], _now(), _now()),
         )
 
     # A path the player keeps returning to and rates highly graduates to 'pursuing'.
@@ -635,7 +671,7 @@ def create_custom(user_id: int, spec: dict) -> dict:
         "estimatedTime": minutes,
         "xpReward": xp_mod.quest_xp_reward(difficulty, kind, level, minutes),
         "requirements": [],
-        "proofType": spec.get("proofType") or ["text", "reflection"],
+        "proofType": spec.get("proofType") or ["text", "photo"],
         "skills": [],
         "levelRequirement": level,
         "aiEvaluationCriteria": ["Matches the objective the player defined",

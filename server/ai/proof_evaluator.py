@@ -1,13 +1,13 @@
 """AI module 2 — Proof Evaluator (§10, §12).
 
 Evaluates submitted evidence on five axes: relevance, completion evidence,
-quality, reflection, and authenticity signals. It never asserts that something
+quality, evidence, and authenticity signals. It never asserts that something
 is fake — it reports confidence and asks for more information when the evidence
 doesn't support the claim.
 
 The heuristic evaluator is the floor: it always runs, produces a full
 assessment, and owns the authenticity signals. When a model is configured its
-rubric judgement is blended in for relevance/completion/quality/reflection, but
+rubric judgement is blended in for relevance/completion/quality/evidence, but
 the server-side anti-cheat signals are applied afterwards and cannot be talked
 out of by anything the player wrote.
 """
@@ -24,12 +24,12 @@ ASSESSMENT_SCHEMA = {
         "relevance": {"type": "integer"},
         "completion": {"type": "integer"},
         "quality": {"type": "integer"},
-        "reflection": {"type": "integer"},
+        "evidence": {"type": "integer"},
         "verdict": {"type": "string", "enum": ["verified", "needs_info", "rejected"]},
         "feedback": {"type": "string"},
         "followUpQuestion": {"type": "string"},
     },
-    "required": ["relevance", "completion", "quality", "reflection", "verdict", "feedback",
+    "required": ["relevance", "completion", "quality", "evidence", "verdict", "feedback",
                  "followUpQuestion"],
     "additionalProperties": False,
 }
@@ -38,7 +38,7 @@ SYSTEM = (
     "You review evidence that a real-world quest was completed.\n"
     "Score four axes from 0-100: relevance (does the evidence match the quest), "
     "completion (does it show the task was actually done), quality (was meaningful "
-    "effort made), reflection (does the writing show understanding).\n"
+    "effort made), evidence (how verifiable the attached proof is).\n"
     "Verdicts: 'verified' when the evidence reasonably supports completion, "
     "'needs_info' when it is plausible but too thin to tell, 'rejected' only when the "
     "evidence clearly describes something else.\n"
@@ -109,12 +109,6 @@ _DOMAIN_WORDS = {
     "passion": ("passion", "creative", "creatively", "craft", "project"),
 }
 
-_REFLECTION_MARKERS = (
-    "i learned", "i realised", "i realized", "i noticed", "i struggled", "i found",
-    "next time", "harder than", "easier than", "surprised", "didn't expect",
-    "did not expect", "went wrong", "worked well", "i understood", "i now",
-    "the tricky part", "what helped", "i got stuck", "made sense",
-)
 
 _LOW_EFFORT = (
     "done", "did it", "finished", "completed it", "yes", "ok", "okay", "yep",
@@ -136,7 +130,7 @@ def _band(score: float) -> str:
 
 
 def _combined_text(payload: dict) -> str:
-    parts = [payload.get("text") or "", payload.get("reflection") or ""]
+    parts = [payload.get("text") or ""]
     structured = payload.get("structured") or {}
     for key, value in structured.items():
         parts.append(f"{key} {value}")
@@ -192,6 +186,11 @@ def score_relevance(quest: dict, payload: dict) -> float:
     return round(base, 1)
 
 
+def _has_video(payload: dict) -> bool:
+    return any((f.get("contentType") or "").startswith("video/")
+               for f in (payload.get("files") or []))
+
+
 def score_completion(quest: dict, payload: dict, proof_types: list[str]) -> float:
     score = 25.0
     text = (payload.get("text") or "").strip()
@@ -216,10 +215,16 @@ def score_completion(quest: dict, payload: dict, proof_types: list[str]) -> floa
 
     if "photo" in proof_types or "document" in proof_types:
         score += 20.0 if payload.get("files") else -12.0
+    if "video" in proof_types:
+        # Video is the strongest evidence the app can collect: it is filmed on
+        # the spot rather than chosen from a library, so it is worth more than a
+        # photo — but its absence is not punished as hard, because a player
+        # without a working camera must still be able to complete the quest.
+        score += 24.0 if _has_video(payload) else -6.0
     if "link" in proof_types:
         score += 15.0 if payload.get("link") else -8.0
-    if "reflection" in proof_types:
-        score += 12.0 if len(payload.get("reflection") or "") >= 40 else -10.0
+    if "document" in proof_types:
+        score += 12.0 if payload.get("files") else -8.0
 
     return round(max(0.0, min(100.0, score)), 1)
 
@@ -250,14 +255,67 @@ def score_quality(payload: dict) -> float:
     return round(max(0.0, min(100.0, length_score + variety_score + specificity)), 1)
 
 
-def score_reflection(payload: dict, required: bool) -> float:
-    text = ((payload.get("reflection") or "") + " " + (payload.get("text") or "")).lower()
-    if not text.strip():
-        return 0.0 if required else 40.0
-    hits = sum(1 for marker in _REFLECTION_MARKERS if marker in text)
-    words = len(_tokens(text))
-    score = min(60.0, hits * 22.0) + min(40.0, words * 1.1)
+def score_evidence(payload: dict, proof_types: list[str]) -> float:
+    """How verifiable the submission is — the artifact, not the prose.
+
+    This axis replaced a reflection score that rewarded writing about how the
+    session felt. Reflection was the easiest part of a submission to fake and
+    the easiest to write without doing the work, so it was measuring willingness
+    to type rather than anything that happened. This measures what a reviewer
+    could actually check.
+
+    The ranking is by how hard each artifact is to produce without doing the
+    thing: video is filmed here and now, a tracker link is written by a device
+    rather than by the player, a photo is of the work itself, a document is the
+    output. Text alone scores nothing at all — that is the whole point.
+    """
+    files = payload.get("files") or []
+    # `contentType` is the key the upload endpoint stores; nothing else writes a
+    # bare `type`, but tolerate it so a hand-built payload behaves the same.
+    def mime(f):
+        return str(f.get("contentType") or f.get("type") or "")
+
+    score = 0.0
+    if _has_video(payload):
+        score += 55.0
+    elif any(mime(f).startswith("image/") for f in files):
+        score += 34.0
+    if payload.get("link"):
+        score += 30.0
+    if any(files) and not any(mime(f).startswith(("image/", "video/")) for f in files):
+        score += 26.0
+
+    # Session data is not an artifact on its own — anyone can type a number —
+    # but alongside one it corroborates the account.
+    structured = payload.get("structured") or {}
+    if structured and score > 0:
+        score += 10.0
+
+    # An archetype that never offered an artifact type cannot be marked down for
+    # missing one. Every archetype in the catalogue offers at least one, so this
+    # only ever applies to custom quests a player wrote themselves.
+    if not any(t in proof_types for t in ("video", "photo", "link", "document")):
+        # Nothing to attach and nothing withheld, so this axis must not drag the
+        # score down: it scores "as verifiable as this quest can be", not "no
+        # evidence". Only custom quests and the teaching mission land here.
+        return 72.0
+
     return round(max(0.0, min(100.0, score)), 1)
+
+
+def has_artifact(payload: dict) -> bool:
+    """Did the player attach anything a reviewer can open?"""
+    return bool(payload.get("files") or payload.get("link"))
+
+
+def _demands_artifact(proof_types: list[str]) -> bool:
+    """True when this quest offers at least one verifiable proof type.
+
+    Every archetype in the catalogue does. Custom quests written by a player at
+    level 30+ may not, and those are held to the older, softer standard rather
+    than made impossible to finish.
+    """
+    return any(t in (proof_types or []) for t in ("video", "photo", "link", "document"))
 
 
 def authenticity(payload: dict, signals: list[str]) -> tuple[float, list[str]]:
@@ -292,13 +350,15 @@ def heuristic_assessment(quest: dict, payload: dict, signals: list[str],
     relevance = score_relevance(quest, payload)
     completion = score_completion(quest, payload, proof_types)
     quality = score_quality(payload)
-    reflection_required = "reflection" in proof_types
-    reflection = score_reflection(payload, reflection_required)
+    evidence = score_evidence(payload, proof_types)
     auth_score, auth_notes = authenticity(payload, signals)
 
-    weights = {"relevance": 0.32, "completion": 0.30, "quality": 0.22, "reflection": 0.16}
+    # Evidence carries more than the old reflection axis did, and quality (which
+    # reads the prose) carries less: what was written about the work should not
+    # outweigh whether the work can be seen.
+    weights = {"relevance": 0.30, "completion": 0.28, "quality": 0.16, "evidence": 0.26}
     composite = (relevance * weights["relevance"] + completion * weights["completion"]
-                 + quality * weights["quality"] + reflection * weights["reflection"])
+                 + quality * weights["quality"] + evidence * weights["evidence"])
     confidence = round(composite * 0.75 + auth_score * 0.25, 1)
 
     if auth_score < 45 or relevance < 18 or completion < 22:
@@ -316,11 +376,22 @@ def heuristic_assessment(quest: dict, payload: dict, signals: list[str],
         # Plenty written, none of it about this quest, and nothing corroborating it.
         verdict = "rejected"
 
+    # The hard floor: a quest that offers a way to attach real evidence cannot be
+    # verified without it, whatever the prose scored. This is the difference
+    # between a progression system and an honour system, so it sits here rather
+    # than in the browser — the client can ask nicely, but it cannot be trusted
+    # to enforce anything, and a crafted request would otherwise walk straight
+    # past the form. `needs_info` rather than `rejected` on purpose: nothing is
+    # wrong with the player, the submission is simply incomplete, and the quest
+    # stays open for them to come back with the artifact.
+    if verdict == "verified" and _demands_artifact(proof_types) and not has_artifact(payload):
+        verdict = "needs_info"
+
     return {
         "relevance": relevance,
         "completion": completion,
         "quality": quality,
-        "reflection": reflection,
+        "evidence": evidence,
         "authenticity": auth_score,
         "confidence": confidence,
         "verdict": verdict,
@@ -332,21 +403,33 @@ def heuristic_assessment(quest: dict, payload: dict, signals: list[str],
 def _quality_multiplier(assessment: dict) -> float:
     """Map an assessment onto the XP multiplier (0.55 - 1.15)."""
     composite = (assessment["relevance"] * 0.3 + assessment["completion"] * 0.3
-                 + assessment["quality"] * 0.25 + assessment["reflection"] * 0.15)
+                 + assessment["quality"] * 0.15 + assessment["evidence"] * 0.25)
     multiplier = 0.55 + (composite / 100.0) * 0.6
     if assessment["authenticity"] < 60:
         multiplier *= 0.7
     return round(max(0.4, min(1.15, multiplier)), 3)
 
 
-def _feedback(quest: dict, assessment: dict) -> str:
+def _feedback(quest: dict, assessment: dict, payload: dict | None = None,
+              proof_types: list[str] | None = None) -> str:
+    payload = payload or {}
+    proof_types = proof_types or []
+
+    # The commonest reason a submission stalls now: a good write-up with nothing
+    # attached. Say exactly that, and name the artifact this quest accepts, so
+    # the player is not left guessing what "more detail" means.
+    if (assessment["verdict"] != "verified" and _demands_artifact(proof_types)
+            and not has_artifact(payload)):
+        return ("Nothing is attached yet, so there's nothing here to verify. "
+                + _artifact_ask(proof_types))
+
     if assessment["verdict"] == "verified":
         if assessment["quality"] >= 75:
             return ("Strong evidence — specific, and it clearly maps to what the quest "
                     "asked for. Full credit.")
-        if assessment["reflection"] < 35:
-            return ("Verified. The evidence holds up, but there's little reflection here — "
-                    "writing what changed is where most of the learning gets locked in.")
+        if assessment["evidence"] < 35:
+            return ("Verified, but only just — the attached proof is thin. Stronger "
+                    "evidence next time is worth more XP, not just a cleaner record.")
         return "Verified. The evidence lines up with what the quest asked for."
     if assessment["verdict"] == "rejected":
         return ("This describes something different from what the quest asked for. "
@@ -361,13 +444,36 @@ def _feedback(quest: dict, assessment: dict) -> str:
             "verify this.")
 
 
+def _artifact_ask(proof_types: list[str]) -> str:
+    """Name the evidence this quest takes, most convincing option first."""
+    options = []
+    if "video" in proof_types:
+        options.append("film it — a few seconds of the real thing is enough")
+    if "link" in proof_types:
+        options.append("paste a link to the tracker, repo or listing that recorded it")
+    if "photo" in proof_types:
+        options.append("photograph the work")
+    if "document" in proof_types:
+        options.append("attach the file you produced")
+    if not options:
+        return "Attach something that shows the work."
+    if len(options) == 1:
+        return options[0].capitalize() + "."
+    return options[0].capitalize() + ", or " + ", or ".join(options[1:]) + "."
+
+
 def _follow_up(quest: dict, assessment: dict, proof_types: list[str]) -> str:
     if assessment["verdict"] == "verified":
         return ""
+    # Thin evidence on a quest that accepts an artifact is the one follow-up
+    # worth asking first — everything else is a detail question about a
+    # submission that cannot be verified yet whatever it says.
+    if assessment["evidence"] < 30 and _demands_artifact(proof_types):
+        return _artifact_ask(proof_types)
+    if "video" in proof_types:
+        return "Record a short clip of a set — even ten seconds is enough to verify this."
     if "photo" in proof_types or "document" in proof_types:
         return "What did you produce, and can you attach it?"
-    if assessment["reflection"] < 30 and "reflection" in proof_types:
-        return "What was the hardest part, and what would you do differently next time?"
     return f"In one or two sentences: what did you actually do for '{quest.get('title','this quest')}'?"
 
 
@@ -387,7 +493,7 @@ def evaluate(quest: dict, payload: dict, signals: list[str], proof_types: list[s
             f"PLAYER CONTEXT\n{player_context or 'none'}\n\n"
             f"SUBMITTED EVIDENCE\n"
             f"Description: {payload.get('text') or '(none)'}\n"
-            f"Reflection: {payload.get('reflection') or '(none)'}\n"
+            f"Link: {payload.get('link') or '(none)'}\n"
             f"Link: {payload.get('link') or '(none)'}\n"
             f"Attachments: {len(payload.get('files') or [])}\n"
             f"Structured data: {payload.get('structured') or '(none)'}\n"
@@ -399,7 +505,7 @@ def evaluate(quest: dict, payload: dict, signals: list[str], proof_types: list[s
                     "relevance": max(0, min(100, int(result["relevance"]))),
                     "completion": max(0, min(100, int(result["completion"]))),
                     "quality": max(0, min(100, int(result["quality"]))),
-                    "reflection": max(0, min(100, int(result["reflection"]))),
+                    "evidence": max(0, min(100, int(result["evidence"]))),
                 }
             except (KeyError, TypeError, ValueError):
                 model_scores = None
@@ -407,8 +513,8 @@ def evaluate(quest: dict, payload: dict, signals: list[str], proof_types: list[s
                 # Blend: the model leads on judgement, the heuristic anchors it.
                 for axis, value in model_scores.items():
                     assessment[axis] = round(value * 0.7 + assessment[axis] * 0.3, 1)
-                composite = (assessment["relevance"] * 0.32 + assessment["completion"] * 0.30
-                             + assessment["quality"] * 0.22 + assessment["reflection"] * 0.16)
+                composite = (assessment["relevance"] * 0.30 + assessment["completion"] * 0.28
+                             + assessment["quality"] * 0.16 + assessment["evidence"] * 0.26)
                 assessment["confidence"] = round(
                     composite * 0.75 + assessment["authenticity"] * 0.25, 1)
                 verdict = result.get("verdict")
@@ -435,16 +541,17 @@ def evaluate(quest: dict, payload: dict, signals: list[str], proof_types: list[s
             assessment["notes"] = assessment.get("notes", []) + [
                 "Verification held back pending more detail."]
 
-    assessment.setdefault("feedback", _feedback(quest, assessment))
+    assessment.setdefault("feedback", _feedback(quest, assessment, payload, proof_types))
     assessment.setdefault("followUp", _follow_up(quest, assessment, proof_types))
     if assessment["verdict"] != "verified":
-        assessment["feedback"] = assessment.get("feedback") or _feedback(quest, assessment)
+        assessment["feedback"] = (assessment.get("feedback")
+                                  or _feedback(quest, assessment, payload, proof_types))
 
     assessment["bands"] = {
         "relevance": _band(assessment["relevance"]),
         "completion": _band(assessment["completion"]),
         "quality": _band(assessment["quality"]),
-        "reflection": _band(assessment["reflection"]),
+        "evidence": _band(assessment["evidence"]),
     }
     assessment["qualityMultiplier"] = _quality_multiplier(assessment)
     return assessment

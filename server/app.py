@@ -21,7 +21,11 @@ SECURITY_HEADERS = {
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY",
     "referrer-policy": "same-origin",
-    "permissions-policy": "geolocation=(), microphone=(), camera=()",
+    # Quest evidence is filmed in the browser and write-ups are dictated, so
+    # the app needs the camera and the microphone on its own origin. Both are
+    # still gated behind the browser's own permission prompt, and both are only
+    # ever requested when the player presses record.
+    "permissions-policy": "geolocation=(), microphone=(self), camera=(self)",
     "content-security-policy": (
         "default-src 'self'; "
         "script-src 'self'; "
@@ -29,7 +33,9 @@ SECURITY_HEADERS = {
         "img-src 'self' data: blob:; "
         "font-src 'self'; "
         "connect-src 'self'; "
-        "media-src 'self' data:; "
+        # blob: is the recording itself — MediaRecorder hands back a Blob and the
+        # review player reads it through an object URL before it is uploaded.
+        "media-src 'self' data: blob:; "
         "object-src 'none'; "
         "base-uri 'none'; "
         "form-action 'self'; "
@@ -59,7 +65,17 @@ def _static_response(path: str) -> Response:
         content_type = "text/css; charset=utf-8"
     elif target.suffix == ".html":
         content_type = "text/html; charset=utf-8"
-    cache = "no-cache" if target.suffix == ".html" else "public, max-age=300"
+    elif target.suffix == ".woff2":
+        content_type = "font/woff2"
+    # A font file never changes without its name changing, so it is the one asset
+    # worth caching hard. Everything else stays short so an edit shows up on a
+    # reload, and HTML is never cached at all.
+    if target.suffix == ".html":
+        cache = "no-cache"
+    elif target.suffix == ".woff2":
+        cache = "public, max-age=31536000, immutable"
+    else:
+        cache = "public, max-age=300"
     return Response(status=200, body=target.read_bytes(), headers={
         "content-type": content_type or "application/octet-stream",
         "cache-control": cache,
@@ -191,6 +207,7 @@ class Server(ThreadingHTTPServer):
 def create_server(host: str | None = None, port: int | None = None) -> Server:
     db.init()
     security.purge_expired_sessions()
+    security.purge_expired_resets()
     return Server((host or config.HOST, port or config.PORT), Handler)
 
 

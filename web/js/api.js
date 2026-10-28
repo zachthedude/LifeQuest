@@ -72,6 +72,9 @@ export const api = {
   signup: (username, password) => request('POST', '/api/auth/signup', { username, password }),
   login: (username, password) => request('POST', '/api/auth/login', { username, password }),
   logout: () => request('POST', '/api/auth/logout'),
+  recover: (username) => request('POST', '/api/auth/recover', { username }),
+  resetPassword: (username, code, password) =>
+    request('POST', '/api/auth/reset', { username, code, password }),
   onboarding: (payload) => request('POST', '/api/onboarding', payload),
 
   // -- player

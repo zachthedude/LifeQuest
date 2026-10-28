@@ -15,10 +15,32 @@ from helpers import Client, use_temp_database
 use_temp_database()
 
 from server import db, security  # noqa: E402
-from server.game import player, quests as quests_mod  # noqa: E402
+from server.ai import quest_generator  # noqa: E402
+from server.game import catalog, player, quests as quests_mod  # noqa: E402
 
 db.init()
 _counter = itertools.count(1)
+
+
+# Evidence is mandatory now, so every fixture carries an artifact. A photograph
+# is the one that fits all three domains: the worked page, the finished piece,
+# the session on the watch.
+PHOTO = {"id": "test-proof.jpg", "name": "proof.jpg",
+         "url": "/api/uploads/test-proof.jpg", "contentType": "image/jpeg"}
+
+def proof_for(client, domain, **overrides):
+    """A domain's proof fixture with a genuinely uploaded artifact attached.
+
+    The submit endpoint resolves every file id against what that player actually
+    has on disk and silently drops the ones it cannot find, so a fabricated
+    metadata dict arrives as no evidence at all. Uploading for real is both the
+    only way these submissions verify and the only coverage the upload path gets.
+    """
+    payload = dict(PROOFS[domain])
+    if "files" in payload:
+        payload["files"] = [client.upload_png()]
+    payload.update(overrides)
+    return payload
 
 
 PROOFS = {
@@ -26,23 +48,19 @@ PROOFS = {
         "text": ("Thirty-five minute session: ten minutes of mobility for hips and ankles, "
                  "then a steady 20 minute run on the canal path, then five minutes walking "
                  "to cool down. Comfortable effort throughout."),
-        "reflection": ("I learned that starting slower makes the middle of the run much "
-                       "easier. Next time I will hold back for the first five minutes."),
         "structured": {"minutes": "35"},
+        "files": [PHOTO],
     },
     "academic": {
         "text": ("Studied rotational dynamics for 40 minutes. Read the chapter on moment of "
                  "inertia, then worked 10 problems and marked the 3 I got wrong."),
-        "reflection": ("I realised I confuse torque and angular momentum whenever the axis "
-                       "moves. Writing the definitions from memory exposed that immediately."),
         "structured": {"minutes": "40", "count": "10"},
+        "files": [PHOTO],
     },
     "passion": {
         "text": ("Spent 45 minutes on the robot arm: designed the gripper linkage in CAD and "
                  "printed a test piece. The first print failed because the tolerance was too "
                  "tight, so I widened it by 0.4mm and reprinted."),
-        "reflection": ("I learned that my tolerances were built for wood, not printed plastic. "
-                       "The failed print taught me more than the successful one."),
         "structured": {"minutes": "45", "field": "Robotics", "interest": "5"},
         "link": "https://example.com/robot-arm-notes",
     },
@@ -98,7 +116,7 @@ class FullJourneyTest(unittest.TestCase):
         # 6/7/8/9/10. Complete it, submit proof, AI evaluation, XP, attributes
         with self.step("submit proof and receive XP"):
             status, result = client.post(f"/api/quests/{academic['id']}/submit",
-                                         PROOFS["academic"])
+                                         proof_for(client, "academic"))
             self.assertEqual(status, 200)
             self.assertEqual(result["verdict"], "verified")
             self.assertGreater(result["xp"]["awarded"], 0)
@@ -136,7 +154,8 @@ class FullJourneyTest(unittest.TestCase):
             for domain in ("physical", "passion"):
                 target = next(q for q in open_quests if q["domain"] == domain)
                 client.post(f"/api/quests/{target['id']}/start")
-                status, res = client.post(f"/api/quests/{target['id']}/submit", PROOFS[domain])
+                status, res = client.post(f"/api/quests/{target['id']}/submit",
+                                          proof_for(client, domain))
                 self.assertEqual(status, 200, domain)
                 self.assertEqual(res["verdict"], "verified", f"{domain}: {res['assessment']}")
 
@@ -224,7 +243,45 @@ class FullJourneyTest(unittest.TestCase):
         self.assertEqual(snapshot["level"], 2)
         self.assertLess(snapshot["xp"]["xpIntoLevel"], snapshot["xp"]["xpForNextLevel"])
 
-    def test_repetition_and_caps_prevent_grinding(self):
+    def test_repeating_one_archetype_yields_diminishing_xp(self):
+        security.limiter.reset()
+        client = Client()
+        name = f"grind{next(_counter)}"
+        client.signup(name)
+        client.onboard()
+        user_id = int(db.query_one("SELECT id FROM users WHERE username=?", (name,))["id"])
+
+        # Pinned to one archetype deliberately. Asking the generator for six
+        # quests measures the catalogue's depth instead: it hands back six
+        # *different* archetypes, and repetition decay — which is keyed on the
+        # template — never fires at all. Repetition is what this test is about,
+        # so it issues the same template every time, which is also what a player
+        # set on grinding one thing would end up doing.
+        template = catalog.TEMPLATES_BY_KEY["acad_focus_block"]
+        model = player.get_model(user_id)
+
+        awards = []
+        blocked = None
+        for index in range(4):
+            spec = quest_generator.render_template(template, model, 1, user_id)
+            quest_id = quests_mod.insert_quest(user_id, spec)
+            proof = dict(PROOFS["academic"])
+            proof["text"] = f"{proof['text']} Session {index} covered a different chapter."
+            result = quests_mod.submit(user_id, quest_id, proof)
+            if not result.get("ok"):
+                blocked = result["error"]
+                break
+            if result["verdict"] == "verified":
+                awards.append(result["xp"]["awarded"])
+
+        self.assertGreaterEqual(len(awards), 2,
+                                "the same quest should verify at least twice")
+        self.assertLess(awards[1], awards[0],
+                        "repeating an archetype must yield diminishing XP")
+        self.assertEqual(blocked, "repetition",
+                         "the same archetype must eventually be refused outright")
+
+    def test_grinding_a_domain_is_eventually_gated(self):
         security.limiter.reset()
         client = Client()
         name = f"grind{next(_counter)}"
@@ -243,17 +300,20 @@ class FullJourneyTest(unittest.TestCase):
             result = quests_mod.submit(user_id, created["id"], proof)
             if not result.get("ok"):
                 blocked = True
-                self.assertIn("already completed", result["message"])
+                # Which gate catches a grinder depends on how deep the catalogue
+                # is: repeat the same archetype and the repetition limit fires;
+                # burn through six different ones and it is the burst limit. The
+                # guarantee under test is that one of them does — asserting on a
+                # particular message made this a test of the catalogue's size.
+                self.assertIn(result["error"], ("repetition", "rate", "cooldown"),
+                              f"unexpected gate: {result['error']} — {result['message']}")
                 break
             if result["verdict"] == "verified":
                 awards.append(result["xp"]["awarded"])
 
         self.assertTrue(awards)
-        if len(awards) >= 3:
-            self.assertLess(awards[-1], awards[0],
-                            "repeating an archetype must yield diminishing XP")
         self.assertTrue(blocked or len(awards) < 6,
-                        "grinding the same archetype should eventually be gated")
+                        "grinding quest after quest should eventually be gated")
 
     def test_duplicate_evidence_cannot_verify_twice(self):
         security.limiter.reset()
@@ -264,11 +324,13 @@ class FullJourneyTest(unittest.TestCase):
 
         quests = client.get("/api/quests")[1]["quests"]
         first = next(q for q in quests if q["domain"] == "academic")
-        status, result = client.post(f"/api/quests/{first['id']}/submit", PROOFS["academic"])
+        status, result = client.post(f"/api/quests/{first['id']}/submit",
+                                     proof_for(client, "academic"))
         self.assertEqual(result["verdict"], "verified")
 
         second = client.post("/api/quests/generate", {"domain": "academic"})[1]["quest"]
-        status, result = client.post(f"/api/quests/{second['id']}/submit", PROOFS["academic"])
+        status, result = client.post(f"/api/quests/{second['id']}/submit",
+                                     proof_for(client, "academic"))
         self.assertEqual(status, 200)
         self.assertNotEqual(result["verdict"], "verified")
         self.assertTrue(any("same evidence" in note for note in result["assessment"]["notes"]))

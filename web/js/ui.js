@@ -1,6 +1,11 @@
 // DOM helpers and shared components.
 // Everything user-supplied goes through textContent — no innerHTML anywhere.
 
+// Cycle by design: icons.js takes `svg` from here and this takes `icon` from
+// there. Both are hoisted function declarations, so neither module can observe
+// the other half-initialised, and the alternative was a second copy of `svg`.
+import { icon } from './components/icons.js';
+
 export function el(tag, props = {}, ...children) {
   const node = document.createElement(tag);
   for (const [key, value] of Object.entries(props || {})) {
@@ -90,7 +95,28 @@ export function rich(text, words = []) {
   return nodes;
 }
 
+/**
+ * Empty a container, telling its contents they are going first.
+ *
+ * Anything holding a timer, an interval or a document-level listener needs a
+ * moment to let go of it, and removing a node from the DOM does not give it one.
+ * `lifequest:detach` was already being listened for — by the theme button, and
+ * by the countdown board — but nothing had ever dispatched it, so those
+ * teardowns never ran and every navigation leaked what they held.
+ *
+ * The event is dispatched on the outgoing subtree before detaching it, because a
+ * handler that wants to read layout or storage must still be able to.
+ */
 export function clear(node) {
+  for (const child of node.querySelectorAll('*')) {
+    // A teardown that throws must not abandon the clear half-done, leaving the
+    // outgoing screen's nodes spliced into the incoming one.
+    try {
+      child.dispatchEvent(new CustomEvent('lifequest:detach'));
+    } catch (error) {
+      console.error('detach handler failed:', error);
+    }
+  }
   while (node.firstChild) node.removeChild(node.firstChild);
   return node;
 }
@@ -166,18 +192,30 @@ export function stars(difficulty) {
     class: 'stars', 'aria-label': `Difficulty ${difficulty} of 5`, title: `Difficulty ${difficulty}/5`,
   });
   for (let i = 1; i <= 5; i += 1) {
-    wrap.append(el('span', { class: i <= difficulty ? '' : 'off', text: '★' }));
+    wrap.append(el('span', { class: i <= difficulty ? '' : 'off' },
+      icon('star', { size: 13 })));
   }
   return wrap;
 }
 
-export function chip(text, variant) {
-  return el('span', { class: `chip${variant ? ` chip--${variant}` : ''}`, text });
+/**
+ * @param {string} text
+ * @param {string} [variant]   physical | academic | passion | xp | success | ...
+ * @param {string} [iconName]  a glyph from components/icons.js, drawn before the text
+ */
+export function chip(text, variant, iconName) {
+  const node = el('span', { class: `chip${variant ? ` chip--${variant}` : ''}` });
+  if (iconName) node.append(icon(iconName, { size: 14 }));
+  node.append(el('span', { text }));
+  return node;
 }
 
+/**
+ * @param {string} mark  a glyph name from components/icons.js — not a character
+ */
 export function emptyState(mark, title, body, action) {
   return el('div', { class: 'empty' },
-    el('div', { class: 'empty__mark', 'aria-hidden': 'true', text: mark }),
+    el('div', { class: 'empty__mark', 'aria-hidden': 'true' }, icon(mark, { size: 40 })),
     el('h3', { text: title }),
     el('p', { text: body }),
     action || null);
@@ -185,7 +223,7 @@ export function emptyState(mark, title, body, action) {
 
 export function errorState(message, onRetry) {
   return el('div', { class: 'errorstate' },
-    el('div', { class: 'empty__mark', 'aria-hidden': 'true', text: '⚠' }),
+    el('div', { class: 'empty__mark', 'aria-hidden': 'true' }, icon('alert', { size: 40 })),
     el('h3', { text: 'Something went wrong' }),
     el('p', { class: 'muted', text: message || 'We could not load this screen.' }),
     onRetry ? el('button', { class: 'btn btn--primary', onClick: onRetry, text: 'Try again' }) : null);
@@ -317,5 +355,6 @@ export function relativeTime(iso) {
   return then.toLocaleDateString();
 }
 
-export const DOMAIN_ICON = { physical: '⚡', academic: '🧠', passion: '🔥' };
+// Glyph *names* from components/icons.js, drawn by `icon()` — never characters.
+export const DOMAIN_ICON = { physical: 'bolt', academic: 'brain', passion: 'flame' };
 export const DOMAIN_LABEL = { physical: 'Physical', academic: 'Academic', passion: 'Passion' };

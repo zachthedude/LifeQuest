@@ -1,24 +1,38 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="LifeQuest">
+  <!--
+    The ascent. Three steps rising left to right are the three domains — body,
+    mind, and the thing you build — climbing toward the XP star, the only warm
+    colour the palette allows.
+
+    Drawn as a silhouette rather than three tinted bars on purpose: at 24px in
+    the nav rail the steps have to survive as shape alone, and cut-outs hold
+    their edge at that size where tinted bars would blend into the gradient.
+    Everything is centred on x=32 so the mark stays balanced when it shrinks.
+  -->
   <defs>
-    <linearGradient id="e-body" x1="8" y1="4" x2="56" y2="60" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#ffd66b"/>
-      <stop offset=".45" stop-color="#ff9d4c"/>
-      <stop offset="1" stop-color="#ff6b8b"/>
+    <linearGradient id="e-body" x1="10" y1="4" x2="54" y2="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8fe4ff"/>
+      <stop offset=".42" stop-color="#7d8cff"/>
+      <stop offset="1" stop-color="#bd85ff"/>
     </linearGradient>
-    <linearGradient id="e-face" x1="20" y1="10" x2="44" y2="40" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#fff6dd" stop-opacity=".95"/>
-      <stop offset="1" stop-color="#ffd66b" stop-opacity="0"/>
+    <linearGradient id="e-sheen" x1="18" y1="8" x2="40" y2="38" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" stop-opacity=".5"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
     </linearGradient>
-    <filter id="e-glow" x="-40%" y="-40%" width="180%" height="180%">
-      <feGaussianBlur stdDeviation="3" result="b"/>
-      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>
   </defs>
-  <g filter="url(#e-glow)">
-    <path d="M32 3 60 32 32 61 4 32Z" fill="url(#e-body)"/>
-    <path d="M32 3 60 32 32 61 4 32Z" fill="url(#e-face)"/>
-    <path d="M32 12 51 32 32 52 13 32Z" fill="#0b0d16" opacity=".22"/>
-    <path d="M32 17 45 32 32 47 19 32Z" fill="#fff3d6" opacity=".92"/>
-    <path d="M32 24 38 32 32 40 26 32Z" fill="#ff7a3d"/>
+
+  <!-- The diamond keeps the shape the app already navigates by. -->
+  <path d="M32 2 62 32 32 62 2 32Z" fill="url(#e-body)"/>
+  <path d="M32 2 62 32 32 62 2 32Z" fill="url(#e-sheen)"/>
+
+  <!-- Three rising steps, cut out of the face, sharing a baseline. -->
+  <g fill="#0b0d16" opacity=".85">
+    <rect x="15.5" y="40" width="10" height="6" rx="2"/>
+    <rect x="27" y="34" width="10" height="12" rx="2"/>
+    <rect x="38.5" y="28" width="10" height="18" rx="2"/>
   </g>
+
+  <!-- XP: the one warm mark in the whole palette, and what the steps climb to. -->
+  <path d="M32 7.5 33.84 13.16 39.5 15 33.84 16.84 32 22.5 30.16 16.84 24.5 15 30.16 13.16Z"
+        fill="#ffcf5c"/>
 </svg>

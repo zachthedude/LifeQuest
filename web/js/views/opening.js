@@ -2,25 +2,33 @@
 // only screen that has to explain what LifeQuest is for before anyone commits a
 // minute to character creation.
 //
-// It is deliberately *not* the home screen (that is the dashboard, behind
-// sign-in) and deliberately not the cinematic intro either. The intro is eight
-// viewports of scroll-driven film; wonderful once, wrong as a first frame for a
-// student who arrived from a link and wants to know what this is. So this page
-// is one still hero — wordmark, tagline, one line of what it does, two doors —
-// with the case for the product laid out calmly underneath it. The film is one
-// click away at the bottom for anyone who wants it.
+// It is deliberately *not* the home screen — that is the dashboard, behind
+// sign-in. It used to be deliberately not the cinematic intro either: the intro
+// was a separate screen, eight viewports of pinned scroll-driven film reached
+// from a "Watch the two-minute intro" button at the bottom of this page.
+//
+// That format is gone and its acts live here now (`components/introActs.js`),
+// as sections you scroll through like any other. The page still opens on one
+// still hero — wordmark, tagline, one line of what it does, two doors — and the
+// argument is still laid out calmly underneath; the mockup and the constellation
+// are now part of that argument rather than a film you had to opt into.
 //
 // Rules this file keeps:
-//   * No scroll timeline, no canvas, no audio. Nothing that can fail loudly.
 //   * Every door out is reachable in the first viewport, before any scrolling.
+//   * Nothing that can fail loudly. The acts animate from scroll position and
+//     are fully laid out in CSS before any of it runs, so a stalled script or a
+//     reduced-motion preference leaves the same readable page.
 //   * The copy is the product's own vocabulary — three domains, evidence before
 //     XP, an honest curve — pointed at the audience it is built for: students.
 
+import { introActs } from '../components/introActs.js';
 import { themeButton } from '../components/themeControl.js';
 import { mountWovenLight } from '../components/wovenLight.js';
+import { decryptText } from '../decrypt.js';
 import { motionAllowed } from '../motion.js';
 import { onThemeChange, resolveTheme } from '../theme.js';
 import { el, rich, whenSized } from '../ui.js';
+import { icon } from '../components/icons.js';
 
 // The words worth slowing a reader down on, in the same emphasis system the rest
 // of the app uses (a change of face, not just a tint — see ui.js `rich`).
@@ -39,15 +47,15 @@ const MOTTO = 'Build the person you want to be.';
 // What a student actually trains. One card per domain, in the domain's own
 // colour, each with a real quest from the catalogue rather than a slogan.
 const DOMAINS = [
-  ['physical', '⚡', 'Train the body',
+  ['physical', 'bolt', 'Train the body',
     'Movement, sleep and strength, sized to where you are today. Physical quests are about '
     + 'capability and health — never appearance, and never a number on a scale.',
     'Run 5 km without stopping'],
-  ['academic', '🧠', 'Train the mind',
+  ['academic', 'brain', 'Train the mind',
     'Study quests written around your actual subjects, and shaped so the only way to finish '
     + 'one is real understanding rather than time at a desk.',
     'Prove chapter 7 without notes'],
-  ['passion', '🔥', 'Build something',
+  ['passion', 'flame', 'Build something',
     'A project that outlives the session — code, writing, music, a small business. Shipped '
     + 'in pieces small enough to fit a school week.',
     'Ship v0.1 to one real user'],
@@ -71,16 +79,16 @@ const LOOP = [
 
 // Why this shape is the right one for a fifteen-year-old, specifically.
 const VALUES = [
-  ['📈', 'An honest curve',
+  ['trending', 'An honest curve',
     'Levels are slow on purpose. Difficulty rises as you do, so week twenty asks more of you '
     + 'than week one and the number on your character stays worth something.'],
-  ['🫀', 'Growth, not grades',
+  ['heart', 'Growth, not grades',
     'No leaderboard, no class ranking, nobody to lose to. You are measured against last month '
     + 'of your own work and nothing else.'],
-  ['✨', 'A guide, not a grader',
+  ['sparkles', 'A guide, not a grader',
     'When a proof is rejected the AI guide explains what it needed and re-sizes the next quest. '
     + 'It coaches through a bad week instead of punishing one.'],
-  ['🔒', 'Private by default',
+  ['lock', 'Private by default',
     'No email, no tracking, nothing public. Your character, your quests and your evidence stay '
     + 'on your own machine.'],
 ];
@@ -95,7 +103,6 @@ const FACTS = [
 /**
  * @param {object}    options
  * @param {Function}  options.onEnter        called with 'signup' | 'login'
- * @param {Function}  [options.onIntro]      called to play the cinematic intro
  * @param {string}    [options.brandName]
  * @param {string}    [options.tagline]      the display headline, one string
  * @param {string}    [options.lede]
@@ -103,7 +110,9 @@ const FACTS = [
  */
 export function openingView({
   onEnter,
-  onIntro,
+  // When set, the visitor already has a character: every door on the page
+  // becomes a link back to it rather than an invitation to make another.
+  resumeHref = null,
   brandName = 'LIFEQUEST',
   tagline = 'Real life is the game. You are the main character.',
   lede = 'A progression system for students: train the body, train the mind, build something '
@@ -129,7 +138,7 @@ export function openingView({
 
   const bar = el('header', { class: 'open__bar' },
     el('div', { class: 'open__barbrand' },
-      el('img', { src: '/img/emblem.svg', alt: '', width: '24', height: '24' }),
+      el('img', { src: 'img/emblem.svg', alt: '', width: '24', height: '24' }),
       el('b', { text: 'LifeQuest' })),
     el('div', { class: 'open__baractions' }, themeButton(), signIn));
 
@@ -141,9 +150,31 @@ export function openingView({
     onClick: () => enter(mode),
   });
 
-  const doors = el('div', { class: 'open__doors' },
-    door('signup', 'solid', 'Create your character'),
-    door('login', 'quiet', 'Continue a run'));
+  // Two doors for a visitor; one for a player who is already signed in and got
+  // here from the logo. Offering them "Create your character" would be offering
+  // to replace the one they have.
+  const doorPair = () => (resumeHref
+    ? [el('a', { class: 'open__door open__door--solid', href: resumeHref,
+                 text: 'Back to your character' })]
+    : [door('signup', 'solid', 'Create your character'),
+       door('login', 'quiet', 'Continue a run')]);
+
+  const doors = el('div', { class: 'open__doors' }, ...doorPair());
+
+  // The headline arrives decoded rather than typed. `mount` rather than
+  // `inview`: this is the first thing on the page, above the fold, and waiting
+  // for an intersection that has already happened costs it its own entrance.
+  const headline = el('h1', { class: 'open__headline' });
+  const headlineDecrypt = decryptText(headline, {
+    text: tagline,
+    trigger: 'mount',
+    variant: 'display',
+    stagger: 34,
+    startDelay: 280,
+    retriggerOnHover: true,
+    seed: 11,
+  });
+  cleanups.push(() => headlineDecrypt?.destroy?.());
 
   const hero = el('div', { class: 'open__hero' },
     el('p', { class: 'open__eyebrow' },
@@ -153,7 +184,12 @@ export function openingView({
     // One element, one vertical gradient: the line fades from full ink at the
     // top to about half by the last word, which is the whole look of the
     // reference frame. Splitting it per line would step the gradient.
-    el('h1', { class: 'open__headline', text: tagline }),
+    //
+    // It also decrypts, which is the animation act I used to carry. One element
+    // is what makes the sequence work: the glyphs lock left to right across both
+    // sentences, so "You are the main character." resolves after "Real life is
+    // the game." on its own, with no second timer to keep in step.
+    headline,
     // Deliberately *not* run through `rich`: the emphasis system tints three
     // domain names and every countable, and directly under a headline this size
     // that reads as a paint chart. The first paragraph stays one calm colour and
@@ -175,7 +211,8 @@ export function openingView({
       }),
     },
       el('span', { text: 'What it does for students' }),
-      el('span', { class: 'open__cuearrow', 'aria-hidden': 'true', text: '▼' })));
+      el('span', { class: 'open__cuearrow', 'aria-hidden': 'true' },
+        icon('chevronDown', { size: 18 }))));
 
   // ------------------------------------------------------------- the domains --
   const domains = el('section', { class: 'open__section', id: 'what-it-does' },
@@ -190,7 +227,8 @@ export function openingView({
       ...DOMAINS.map(([domain, glyph, title, body, example]) => el('article', {
         class: 'open__card', dataset: { domain },
       },
-        el('span', { class: 'open__cardicon', 'aria-hidden': 'true', text: glyph }),
+        el('span', { class: 'open__cardicon', 'aria-hidden': 'true' },
+          icon(glyph, { size: 26 })),
         el('h3', { text: title }),
         el('p', {}, ...rich(body, KEYWORDS)),
         el('p', { class: 'open__example' },
@@ -220,37 +258,52 @@ export function openingView({
       el('h2', { text: 'Built to grow a person, not a score.' })),
     el('div', { class: 'open__values' },
       ...VALUES.map(([glyph, title, body]) => el('article', { class: 'open__value' },
-        el('span', { class: 'open__valueicon', 'aria-hidden': 'true', text: glyph }),
+        el('span', { class: 'open__valueicon', 'aria-hidden': 'true' },
+          icon(glyph, { size: 22 })),
         el('div', {},
           el('h3', { text: title }),
           el('p', {}, ...rich(body, KEYWORDS)))))));
 
   // ----------------------------------------------------------------- closing --
-  const intro = onIntro
-    ? el('button', {
-      class: 'open__introlink', type: 'button',
-      onClick: () => { teardown(); onIntro(); },
-    },
-      el('span', { class: 'open__introglyph', 'aria-hidden': 'true', text: '▶' }),
-      el('span', { text: 'Watch the two-minute intro' }))
-    : null;
+  // This is where act IV landed. The film ended on a closing headline and the
+  // two doors, which is exactly what this section already was, so it took the
+  // headline's decrypt rather than a second copy of the section. `inview` here,
+  // not `mount`: it is at the bottom of a long page and has to still be
+  // unresolved when it is finally reached.
+  const closingHead = el('h2', { class: 'open__closinghead' });
+  const closingDecrypt = decryptText(closingHead, {
+    text: 'Start at level 1.',
+    trigger: 'inview',
+    variant: 'display',
+    stagger: 40,
+    startDelay: 120,
+    retriggerOnHover: true,
+    seed: 31,
+  });
+  cleanups.push(() => closingDecrypt?.destroy?.());
 
   const closing = el('section', { class: 'open__closing' },
-    el('img', { class: 'open__mark', src: '/img/emblem.svg', alt: '',
+    el('img', { class: 'open__mark', src: 'img/emblem.svg', alt: '',
                 width: '64', height: '64', decoding: 'async' }),
-    el('h2', { class: 'open__closinghead', text: 'Start at level 1.' }),
+    closingHead,
     el('p', { class: 'open__lede' },
-      ...rich('Character creation is five questions — your subjects, how you move, what you '
-        + 'want to build. Then your first three quests are waiting, and the climb is yours.',
+      ...rich(resumeHref
+        ? 'Your character is where you left it, and your quests for today are already '
+          + 'waiting. The climb carries on from here.'
+        : 'Character creation is five questions — your subjects, how you move, what you '
+          + 'want to build. Then your first three quests are waiting, and the climb is yours.',
       KEYWORDS)),
-    el('div', { class: 'open__doors' },
-      door('signup', 'solid', 'Create your character'),
-      door('login', 'quiet', 'Continue a run')),
-    intro);
+    el('div', { class: 'open__doors' }, ...doorPair()));
 
   const footer = el('footer', { class: 'open__footer' },
     el('span', { text: `LifeQuest — ${MOTTO}` }),
     el('span', { class: 'open__footerdim', text: 'Level 1 → 100 · Evidence before XP' }));
+
+  // ------------------------------------------------------------- the acts --
+  // What used to be the cinematic. It owns a canvas and two scroll scrubs, so
+  // it is torn down with everything else when the page leaves.
+  const acts = introActs();
+  cleanups.push(() => acts.destroy());
 
   // The woven light sits behind the hero — the first screen, and the only part
   // of the page that is mostly empty space to fill. It is decoration with a
@@ -263,7 +316,11 @@ export function openingView({
     woven,
     el('div', { class: 'open__grid', 'aria-hidden': 'true' }),
     bar,
-    el('div', { class: 'open__body' }, hero, domains, loop, values, closing, footer));
+    // The acts sit after the loop has been explained and before the case for
+    // students: by then a reader knows what a quest and a proof are, which is
+    // what the mockup is showing them.
+    el('div', { class: 'open__body' },
+      hero, domains, loop, acts.node, values, closing, footer));
 
   // -------------------------------------------------------- woven light --
   // Mounted after layout: a canvas built into a detached, zero-width container

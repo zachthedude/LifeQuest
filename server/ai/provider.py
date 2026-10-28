@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 import urllib.error
 import urllib.request
 from typing import Any
@@ -54,10 +55,11 @@ class BaseProvider:
     available = False
 
     def complete_json(self, system: str, prompt: str, schema: dict,
-                      max_tokens: int = 2000) -> dict | None:
+                      max_tokens: int = 2000, timeout: float | None = None) -> dict | None:
         return None
 
-    def complete_text(self, system: str, prompt: str, max_tokens: int = 1000) -> str | None:
+    def complete_text(self, system: str, prompt: str, max_tokens: int = 1000,
+                      timeout: float | None = None) -> str | None:
         return None
 
 
@@ -88,13 +90,13 @@ class AnthropicProvider(BaseProvider):
 
     # -- public API ---------------------------------------------------------
     def complete_json(self, system: str, prompt: str, schema: dict,
-                      max_tokens: int = 2000) -> dict | None:
+                      max_tokens: int = 2000, timeout: float | None = None) -> dict | None:
         body = self._base_body(system, prompt, max_tokens)
         body["output_config"] = {
             "effort": _EFFORT,
             "format": {"type": "json_schema", "schema": schema},
         }
-        text = self._send(body)
+        text = self._send(body, timeout)
         if text is None:
             return None
         try:
@@ -103,10 +105,11 @@ class AnthropicProvider(BaseProvider):
             log.warning("AI returned non-JSON despite a schema; falling back")
             return None
 
-    def complete_text(self, system: str, prompt: str, max_tokens: int = 1000) -> str | None:
+    def complete_text(self, system: str, prompt: str, max_tokens: int = 1000,
+                      timeout: float | None = None) -> str | None:
         body = self._base_body(system, prompt, max_tokens)
         body["output_config"] = {"effort": _EFFORT}
-        return self._send(body)
+        return self._send(body, timeout)
 
     # -- internals ----------------------------------------------------------
     def _base_body(self, system: str, prompt: str, max_tokens: int) -> dict[str, Any]:
@@ -124,16 +127,18 @@ class AnthropicProvider(BaseProvider):
             "messages": [{"role": "user", "content": prompt}],
         }
 
-    def _send(self, body: dict) -> str | None:
+    def _send(self, body: dict, timeout: float | None = None) -> str | None:
         try:
             if self._client is not None:
-                return self._send_sdk(body)
-            return self._send_http(body)
+                return self._send_sdk(body, timeout)
+            return self._send_http(body, timeout)
         except Exception as exc:  # never let an AI outage break the game loop
             log.warning("AI request failed (%s); using local reasoning", exc)
             return None
 
-    def _send_sdk(self, body: dict) -> str | None:
+    def _send_sdk(self, body: dict, timeout: float | None = None) -> str | None:
+        if timeout is not None:
+            body = {**body, "timeout": timeout}
         response = self._client.messages.create(**body)
         if getattr(response, "stop_reason", None) == "refusal":
             log.info("AI declined the request; using local reasoning")
@@ -143,7 +148,7 @@ class AnthropicProvider(BaseProvider):
                 return block.text
         return None
 
-    def _send_http(self, body: dict) -> str | None:
+    def _send_http(self, body: dict, timeout: float | None = None) -> str | None:
         request = urllib.request.Request(
             f"{self.base_url}/v1/messages",
             data=json.dumps(body).encode("utf-8"),
@@ -155,7 +160,8 @@ class AnthropicProvider(BaseProvider):
             method="POST",
         )
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as raw:
+            with urllib.request.urlopen(
+                    request, timeout=timeout or self.timeout) as raw:
                 payload = json.loads(raw.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", "replace")[:400]
@@ -197,11 +203,21 @@ class OllamaProvider(BaseProvider):
         self.keep_alive = keep_alive
 
     def complete_json(self, system: str, prompt: str, schema: dict,
-                      max_tokens: int = 2000) -> dict | None:
+                      max_tokens: int = 2000, timeout: float | None = None) -> dict | None:
         # Scoring wants the most probable answer, not an interesting one.
-        text = self._chat(system, prompt, max_tokens, fmt=schema, temperature=0.2)
+        started = time.monotonic()
+        budget = timeout or self.timeout
+        text = self._chat(system, prompt, max_tokens, fmt=schema, temperature=0.2,
+                          timeout=budget)
         if text is None:
-            text = self._chat(system, prompt, max_tokens, fmt="json", temperature=0.2)
+            # The retry exists for old daemons that reject a schema, which they do
+            # immediately. A timeout is the opposite case — retrying it would spend
+            # the budget twice over — so only retry inside whatever time is left.
+            remaining = budget - (time.monotonic() - started)
+            if remaining < 2.0:
+                return None
+            text = self._chat(system, prompt, max_tokens, fmt="json", temperature=0.2,
+                              timeout=remaining)
         if text is None:
             return None
         try:
@@ -213,11 +229,12 @@ class OllamaProvider(BaseProvider):
                 log.warning("Ollama returned non-JSON despite a schema; falling back")
             return salvaged
 
-    def complete_text(self, system: str, prompt: str, max_tokens: int = 1000) -> str | None:
-        return self._chat(system, prompt, max_tokens)
+    def complete_text(self, system: str, prompt: str, max_tokens: int = 1000,
+                      timeout: float | None = None) -> str | None:
+        return self._chat(system, prompt, max_tokens, timeout=timeout)
 
     def _chat(self, system: str, prompt: str, max_tokens: int, fmt: Any = None,
-              temperature: float = 0.6) -> str | None:
+              temperature: float = 0.6, timeout: float | None = None) -> str | None:
         body: dict[str, Any] = {
             "model": self.model,
             "stream": False,
@@ -241,7 +258,8 @@ class OllamaProvider(BaseProvider):
             method="POST",
         )
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as raw:
+            with urllib.request.urlopen(
+                    request, timeout=timeout or self.timeout) as raw:
                 payload = json.loads(raw.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", "replace")[:300]

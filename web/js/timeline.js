@@ -128,6 +128,30 @@ export function timeline() {
 }
 
 /**
+ * Progress of an element travelling *through* the viewport, for content that
+ * sits in the normal flow rather than on a pinned track.
+ *
+ * 0 when the element's top is `enter` down the viewport, 1 when it has risen to
+ * `settle`. The window closes above the middle on purpose: the animation is
+ * finished by the time the section is somewhere a person would stop and read
+ * it, so nothing is still moving under the eye.
+ *
+ * @param {HTMLElement} node
+ * @param {object} [options]
+ * @param {number} [options.enter=0.88]   viewport fraction where it begins
+ * @param {number} [options.settle=0.32]  viewport fraction where it is done
+ * @returns {number} 0→1
+ */
+export function throughViewport(node, { enter = 0.88, settle = 0.32 } = {}) {
+  const height = window.innerHeight || 1;
+  const top = node.getBoundingClientRect().top;
+  const from = height * enter;
+  const to = height * settle;
+  if (from <= to) return 1;
+  return clamp01((from - top) / (from - to));
+}
+
+/**
  * Drive a timeline from how far a tall track element has scrolled past the top.
  *
  * @param {HTMLElement} trackEl        the tall scroll track (its sticky child is the stage)
@@ -136,9 +160,12 @@ export function timeline() {
  *                                     because every distance is in viewport pixels
  * @param {number}      [options.smooth=0.16]  1 = follow the scrollbar exactly
  * @param {Function}    [options.onProgress]
+ * @param {Function}    [options.measure]      override the 0→1 reading. The default
+ *                                             is the pinned-track one; inline
+ *                                             sections pass `throughViewport`.
  * @returns {{seek: Function, refresh: Function, destroy: Function}}
  */
-export function scrollScrub(trackEl, { build, smooth = 0.16, onProgress } = {}) {
+export function scrollScrub(trackEl, { build, smooth = 0.16, onProgress, measure: reading } = {}) {
   let tl = build();
   let target = 0;
   let current = 0;
@@ -146,11 +173,13 @@ export function scrollScrub(trackEl, { build, smooth = 0.16, onProgress } = {}) 
   let timer = 0;
   let alive = true;
 
-  const measure = () => {
-    const distance = trackEl.offsetHeight - window.innerHeight;
-    if (distance <= 0) return 0;
-    return clamp01(-trackEl.getBoundingClientRect().top / distance);
-  };
+  const measure = reading
+    ? () => clamp01(reading(trackEl))
+    : () => {
+      const distance = trackEl.offsetHeight - window.innerHeight;
+      if (distance <= 0) return 0;
+      return clamp01(-trackEl.getBoundingClientRect().top / distance);
+    };
 
   const paint = (value) => {
     tl.apply(value);

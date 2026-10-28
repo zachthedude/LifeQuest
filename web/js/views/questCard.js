@@ -1,16 +1,63 @@
 // The quest card and the proof-submission flow — shared by several screens.
 
 import { api } from '../api.js';
+import { questArt } from '../components/questArt.js';
+import { dictation } from '../components/dictation.js';
+import { videoCapture } from '../components/videoCapture.js';
+import { proofDraft } from '../components/proofDraft.js';
+import { msUntil } from '../components/flipDisk.js';
 import { celebrate, sound } from '../effects.js';
 import { refreshNotifications, refreshPlayer, refreshQuests } from '../store.js';
+import { icon } from '../components/icons.js';
 import {
   chip, el, field, formatMinutes, modal, stars, toast, DOMAIN_LABEL, DOMAIN_ICON,
 } from '../ui.js';
 
-const PROOF_LABEL = {
-  text: 'Description', photo: 'Photo', document: 'Document', link: 'Link',
-  reflection: 'Reflection', structured: 'Session data',
+// The proof types that produce something a reviewer can open. A quest offering
+// any of them cannot be verified on a write-up alone — the server enforces it;
+// these let the form say so before the player spends ten minutes writing.
+const ARTIFACT_TYPES = ['video', 'photo', 'link', 'document'];
+
+const ARTIFACT_ASK = {
+  video: 'film it',
+  link: 'paste the tracker or project link',
+  photo: 'photograph the work',
+  document: 'attach the file you produced',
 };
+
+/** "Film it, or photograph the work." — in the order that convinces most. */
+function artifactAsk(types) {
+  const asks = ARTIFACT_TYPES.filter((t) => types.includes(t)).map((t) => ARTIFACT_ASK[t]);
+  if (!asks.length) return 'Attach something that shows the work.';
+  const sentence = asks.length === 1
+    ? asks[0]
+    : `${asks[0]}, or ${asks.slice(1).join(', or ')}`;
+  return sentence.charAt(0).toUpperCase() + sentence.slice(1) + '.';
+}
+
+const PROOF_LABEL = {
+  text: 'Description', photo: 'Photo', video: 'Video', document: 'Document',
+  link: 'Link', structured: 'Session data',
+};
+
+// Every card says when it runs out; only the most urgent one gets the flip-disk
+// board on the dashboard. A board is ~800 elements, and one per card on a list
+// of five would be four thousand of them sitting behind a live canvas — so the
+// cards get the reading and the board gets the drama.
+function expiryChip(quest) {
+  const ms = msUntil(quest.expiresAt);
+  if (ms === null || quest.status === 'verified') return null;
+  if (ms <= 0) return chip('Expired', 'danger', 'clock');
+
+  const hours = ms / 3600000;
+  const label = hours >= 24
+    ? `${Math.floor(hours / 24)}d left`
+    : hours >= 1
+      ? `${Math.floor(hours)}h left`
+      : `${Math.max(1, Math.floor(ms / 60000))}m left`;
+  // Under six hours it stops being a detail and starts being the reason to act.
+  return chip(label, hours < 1 ? 'danger' : hours < 6 ? 'warn' : undefined, 'clock');
+}
 
 export function questCard(quest, { onChanged } = {}) {
   const done = ['verified', 'expired', 'abandoned'].includes(quest.status);
@@ -21,18 +68,29 @@ export function questCard(quest, { onChanged } = {}) {
 
   card.append(
     el('div', { class: 'quest__top' },
-      chip(`${DOMAIN_ICON[quest.domain]} ${DOMAIN_LABEL[quest.domain]}`, quest.domain),
+      chip(DOMAIN_LABEL[quest.domain], quest.domain, DOMAIN_ICON[quest.domain]),
       quest.kind !== 'daily' ? chip(quest.kind) : null,
       quest.source === 'ai' ? chip('AI-tuned') : null,
       quest.source === 'user' ? chip('Yours') : null,
       quest.chainKey ? chip(`Step ${quest.chainStep}`) : null,
       el('span', { style: { marginLeft: 'auto' } }, stars(quest.difficulty))),
-    el('h3', { class: 'quest__title', text: quest.title }),
-    el('p', { class: 'quest__desc', text: quest.description }),
+    // The drawing carries the same information as the title, faster: a list of
+    // cards is scanned long before any of it is read. It is decorative in the
+    // accessibility sense — the title says the same thing in words — so it is
+    // hidden from assistive tech rather than given a duplicate label.
+    el('div', { class: 'quest__lead' },
+      el('div', { class: 'quest__art' },
+        questArt(quest.templateKey, quest.domain, { width: 60 })),
+      el('div', { class: 'quest__lead-text' },
+        el('h3', { class: 'quest__title', text: quest.title }),
+        el('p', { class: 'quest__desc', text: quest.description }))),
     el('div', { class: 'quest__meta' },
-      el('span', { text: `⏱ ${formatMinutes(quest.estimatedTime)}` }),
-      el('span', { class: 'num', text: `✦ ${quest.xpReward} XP` }),
+      el('span', {}, icon('clock', { size: 14 }),
+        el('span', { text: formatMinutes(quest.estimatedTime) })),
+      el('span', { class: 'num' }, icon('spark', { size: 14 }),
+        el('span', { text: `${quest.xpReward} XP` })),
       el('span', { text: `${quest.difficultyLabel}` }),
+      expiryChip(quest),
       quest.status === 'submitted' ? el('span', { class: 'chip chip--warn', text: 'Awaiting more detail' }) : null),
   );
 
@@ -94,7 +152,7 @@ export function questCard(quest, { onChanged } = {}) {
 export function openDetailModal(quest, { onChanged } = {}) {
   const body = el('div', { class: 'stack' },
     el('div', { class: 'row' },
-      chip(`${DOMAIN_ICON[quest.domain]} ${DOMAIN_LABEL[quest.domain]}`, quest.domain),
+      chip(DOMAIN_LABEL[quest.domain], quest.domain, DOMAIN_ICON[quest.domain]),
       chip(quest.kind), stars(quest.difficulty),
       chip(`${quest.xpReward} XP`, 'xp')),
     el('p', { class: 'muted', text: quest.description }),
@@ -124,13 +182,11 @@ export function openProofModal(quest, { onChanged, origin } = {}) {
   const types = quest.proofType?.length ? quest.proofType : ['text'];
   const uploaded = [];
 
+  const hasArtifact = () => Boolean(uploaded.length || linkInput.value.trim());
+
   const textArea = el('textarea', {
     class: 'textarea', name: 'text', required: true,
     placeholder: 'What did you actually do? Be specific — what you covered, how long, what the result was.',
-  });
-  const reflectionArea = el('textarea', {
-    class: 'textarea', name: 'reflection',
-    placeholder: 'What did you learn? What was harder or easier than expected?',
   });
   const linkInput = el('input', { class: 'input', type: 'url', name: 'link', placeholder: 'https://…' });
   const minutesInput = el('input', {
@@ -148,17 +204,34 @@ export function openProofModal(quest, { onChanged, origin } = {}) {
   });
 
   const fileList = el('div', { class: 'row', style: { gap: '6px' } });
+
+  async function attach(file, mark = 'paperclip') {
+    const result = await api.upload(file);
+    for (const meta of result.files) {
+      uploaded.push(meta);
+      fileList.append(chip(meta.name, 'success', mark));
+    }
+    refreshRequirement();
+    return result.files;
+  }
+
+  const wantsVideo = types.includes('video');
   const fileInput = el('input', {
-    class: 'input', type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif,application/pdf,.txt,.md',
+    class: 'input',
+    type: 'file',
+    // Video quests accept a clip from the gallery too — the recorder is the
+    // fast path, not the only one, so a player whose camera fails is not stuck.
+    accept: wantsVideo
+      ? 'video/webm,video/mp4,video/quicktime,image/png,image/jpeg,image/webp'
+      : 'image/png,image/jpeg,image/webp,image/gif,application/pdf,.txt,.md',
+    // `capture` asks a phone to open the camera straight from the picker; a
+    // desktop browser ignores it and shows the normal file dialog.
+    capture: wantsVideo ? 'environment' : null,
     onChange: async (event) => {
       const file = event.target.files?.[0];
       if (!file) return;
       try {
-        const result = await api.upload(file);
-        for (const meta of result.files) {
-          uploaded.push(meta);
-          fileList.append(chip(`📎 ${meta.name}`, 'success'));
-        }
+        await attach(file, file.type.startsWith('video/') ? 'video' : 'paperclip');
         toast('File attached', file.name, 'success');
       } catch (error) {
         toast('Upload failed', error.message, 'error');
@@ -167,18 +240,46 @@ export function openProofModal(quest, { onChanged, origin } = {}) {
     },
   });
 
+  // Filmed on the spot. Held so the modal can switch the camera off on close.
+  const capture = wantsVideo
+    ? videoCapture({
+      onCaptured: async (file) => {
+        await attach(file, 'video');
+        toast('Video attached', 'Recorded just now.', 'success');
+      },
+    })
+    : null;
+
+  // The reason to speak rather than type — you have just finished exercising —
+  // applies to the one write-up that is left.
+  const textDictation = dictation(textArea, { label: 'Speak it' });
+
   const isExploration = quest.templateKey?.includes('explore');
+
+  // Evidence is mandatory server-side. The banner and the disabled button are
+  // courtesy — they stop a player writing three careful paragraphs and only
+  // then discovering the submission cannot be verified.
+  const needsArtifact = ARTIFACT_TYPES.some((t) => types.includes(t));
+  const requirement = el('p', { class: 'proof__need' });
+
   const body = el('form', { class: 'stack', id: 'proof-form' },
     el('p', { class: 'muted', style: { margin: 0 },
               text: quest.completionCriteria || 'Describe what you completed.' }),
-    field('What did you accomplish?', textArea,
+    needsArtifact ? requirement : null,
+    field('What did you accomplish?',
+      el('div', { class: 'stack', style: { gap: '8px' } }, textArea, textDictation.node),
       'The reviewer checks that this matches the quest — specifics matter more than length.'),
-    types.includes('reflection') || types.includes('text')
-      ? field('Reflection (optional but worth more XP)', reflectionArea) : null,
     types.includes('link') ? field('Link', linkInput, 'Project, repository, upload or article.') : null,
-    (types.includes('photo') || types.includes('document'))
-      ? field('Attachment', el('div', { class: 'stack', style: { gap: '8px' } }, fileInput, fileList),
-        'PNG, JPEG, WebP, GIF, PDF, TXT or MD up to 8 MB.') : null,
+    capture
+      ? field('Film it', capture.node,
+        'Recorded here and now — the strongest evidence the app can take.')
+      : null,
+    (types.includes('photo') || types.includes('document') || wantsVideo)
+      ? field(wantsVideo ? 'Or attach a file' : 'Attachment',
+        el('div', { class: 'stack', style: { gap: '8px' } }, fileInput, fileList),
+        wantsVideo
+          ? 'WebM or MP4 up to 32 MB, or a photo.'
+          : 'PNG, JPEG, WebP, GIF, PDF, TXT or MD up to 8 MB.') : null,
     types.includes('structured')
       ? el('div', { class: 'grid grid--3' },
         field('Minutes spent', minutesInput),
@@ -195,6 +296,36 @@ export function openProofModal(quest, { onChanged, origin } = {}) {
 
   const submitButton = el('button', { class: 'btn btn--primary', type: 'submit', form: 'proof-form',
                                       text: 'Submit for evaluation' });
+
+  // One function owns "is this submittable yet", and everything that can change
+  // the answer calls it: typing a link, attaching a file, finishing a recording,
+  // restoring a draft.
+  function refreshRequirement() {
+    if (!needsArtifact) return;
+    const ready = hasArtifact();
+    requirement.classList.toggle('proof__need--met', ready);
+    requirement.textContent = ready
+      ? 'Evidence attached — this can be verified.'
+      : `Evidence required: ${artifactAsk(types)} A write-up on its own cannot be verified.`;
+    submitButton.disabled = !ready;
+    submitButton.title = ready ? '' : 'Attach your evidence first';
+  }
+
+  linkInput.addEventListener('input', refreshRequirement);
+
+  // The draft covers only what the player typed. Uploads are already on the
+  // server and are re-attached deliberately rather than silently — see the
+  // module header in components/proofDraft.js.
+  const draft = proofDraft(quest.id, {
+    text: textArea,
+    link: linkInput,
+    minutes: minutesInput,
+    count: countInput,
+    field: fieldInput,
+    interest: interestInput,
+  });
+  const saveDraft = () => draft.save();
+  const clearDraft = () => draft.clear();
   const controller = modal({
     title: `Submit proof — ${quest.title}`,
     body,
@@ -202,7 +333,22 @@ export function openProofModal(quest, { onChanged, origin } = {}) {
       el('span', { class: 'dim', style: { fontSize: '12.5px' },
                    text: 'Evidence is evaluated before XP is awarded.' }),
       submitButton),
+    // Every exit from this modal — the ×, the backdrop, Escape, or a successful
+    // submit — has to put the camera light out and stop the recogniser. Doing it
+    // here rather than at each call site is what makes that true by construction.
+    onClose: () => {
+      capture?.stop();
+      textDictation.stop();
+      saveDraft();
+    },
   });
+
+  // Restore last, so the requirement banner reflects what came back.
+  const restored = draft.restore();
+  refreshRequirement();
+  if (restored) {
+    toast('Draft restored', 'Picking up where you left off.', 'info', 4000);
+  }
 
   body.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -214,13 +360,16 @@ export function openProofModal(quest, { onChanged, origin } = {}) {
 
     const payload = {
       text: textArea.value.trim(),
-      reflection: reflectionArea.value.trim(),
       link: linkInput.value.trim(),
       structured,
       files: uploaded,
     };
-    if (!payload.text && !payload.reflection && !payload.link && !uploaded.length) {
+    if (!payload.text && !payload.link && !uploaded.length) {
       toast('Nothing to evaluate', 'Add at least a short description.', 'error');
+      return;
+    }
+    if (needsArtifact && !hasArtifact()) {
+      toast('Evidence required', artifactAsk(types), 'error', 7000);
       return;
     }
 
@@ -228,6 +377,7 @@ export function openProofModal(quest, { onChanged, origin } = {}) {
     submitButton.textContent = 'Evaluating…';
     try {
       const result = await api.submitQuest(quest.id, payload);
+      clearDraft();
       controller.close();
       // Level-ups and unlocks create notifications server-side — pull the
       // badge count so the topbar reflects them immediately.
@@ -257,7 +407,8 @@ export function showResult(result, quest, origin) {
 
   const body = el('div', { class: 'assessment' },
     el('div', { class: `verdict verdict--${result.verdict}` },
-      el('span', { text: verified ? '✓' : result.verdict === 'rejected' ? '✕' : '⚠' }),
+      icon(verified ? 'check' : result.verdict === 'rejected' ? 'cross' : 'alert',
+        { size: 20 }),
       el('span', {
         text: verified ? 'QUEST VERIFIED'
           : result.verdict === 'rejected' ? 'EVIDENCE DOES NOT MATCH' : 'MORE INFORMATION REQUIRED',
@@ -266,7 +417,7 @@ export function showResult(result, quest, origin) {
       axisTile('Relevance', assessment.relevance, bands.relevance),
       axisTile('Completion', assessment.completion, bands.completion),
       axisTile('Quality', assessment.quality, bands.quality),
-      axisTile('Reflection', assessment.reflection, bands.reflection)),
+      axisTile('Evidence', assessment.evidence, bands.evidence)),
     el('p', { class: 'muted', style: { margin: 0 },
               text: `Confidence ${Math.round(assessment.confidence || 0)}% · evaluated by ${
                 assessment.evaluator === 'model' ? 'language model + rules' : 'the built-in rules engine'}` }),

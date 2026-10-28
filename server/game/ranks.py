@@ -18,14 +18,20 @@ from .. import db
 from . import avatar as avatar_mod
 from . import xp as xp_mod
 
+# How many rows a board shows before the viewer's own row is pinned on the end.
+BOARD_SIZE = 25
+
+# `icon` is a name from web/js/components/icons.js — the client draws it. The
+# ladder climbs on purpose: a shield, then a medal, a star, a trophy, a gem, a
+# diamond and a crown.
 TIERS = [
-    {"key": "iron",     "name": "Iron",     "minLevel": 1,   "color": "#8d95a6", "icon": "◆"},
-    {"key": "bronze",   "name": "Bronze",   "minLevel": 5,   "color": "#c8813f", "icon": "◆"},
-    {"key": "silver",   "name": "Silver",   "minLevel": 15,  "color": "#c3ccdd", "icon": "◈"},
-    {"key": "gold",     "name": "Gold",     "minLevel": 30,  "color": "#ffcf5c", "icon": "★"},
-    {"key": "platinum", "name": "Platinum", "minLevel": 50,  "color": "#7fe3d4", "icon": "✦"},
-    {"key": "diamond",  "name": "Diamond",  "minLevel": 70,  "color": "#8fd0ff", "icon": "❖"},
-    {"key": "legend",   "name": "Legend",   "minLevel": 90,  "color": "#bd85ff", "icon": "✵"},
+    {"key": "iron",     "name": "Iron",     "minLevel": 1,   "color": "#8d95a6", "icon": "shield"},
+    {"key": "bronze",   "name": "Bronze",   "minLevel": 5,   "color": "#c8813f", "icon": "medal"},
+    {"key": "silver",   "name": "Silver",   "minLevel": 15,  "color": "#c3ccdd", "icon": "star"},
+    {"key": "gold",     "name": "Gold",     "minLevel": 30,  "color": "#ffcf5c", "icon": "trophy"},
+    {"key": "platinum", "name": "Platinum", "minLevel": 50,  "color": "#7fe3d4", "icon": "gem"},
+    {"key": "diamond",  "name": "Diamond",  "minLevel": 70,  "color": "#8fd0ff", "icon": "diamond"},
+    {"key": "legend",   "name": "Legend",   "minLevel": 90,  "color": "#bd85ff", "icon": "crown"},
 ]
 
 # Each tier is split into three divisions so there is always a near target.
@@ -127,8 +133,18 @@ def _rank(entries: list[dict], key, viewer_id: int) -> dict:
     for position, entry in enumerate(ordered, start=1):
         board.append({**entry, "rank": position})
     viewer = next((e for e in board if e["userId"] == viewer_id), None)
+
+    # The top of the board answers "who is ahead?"; the player opened it to ask
+    # "where am I?". Cutting at BOARD_SIZE answers the first question and drops
+    # the one row they came for, so their own row is pinned on the end whenever
+    # the cut would have lost it. It carries its true rank, which is what keeps
+    # it readable as "...and you are 148th" rather than as 26th place.
+    shown = board[:BOARD_SIZE]
+    if viewer is not None and all(e["userId"] != viewer_id for e in shown):
+        shown = [*shown, viewer]
+
     return {
-        "entries": board[:25],
+        "entries": shown,
         "total": len(board),
         "viewerRank": viewer["rank"] if viewer else None,
     }

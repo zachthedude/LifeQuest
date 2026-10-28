@@ -53,6 +53,81 @@ def create_session(user_id: int) -> tuple[str, str]:
     return token, csrf
 
 
+# --------------------------------------------------------------- recovery --
+# How long a recovery code is good for. Short, because the code is printed where
+# the person running the server can read it — there is no inbox for it to sit in.
+RESET_MINUTES = 15
+
+# No O/0, no I/1, no U (which people hear as V when reading a code aloud). A
+# recovery code is going to be copied by hand off a terminal at least once.
+RESET_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTVWXYZ"
+
+
+def create_reset_code(user_id: int) -> str:
+    """Mint a single-use recovery code. Only its hash is stored.
+
+    Any code already outstanding for this player is dropped first, so asking
+    twice does not leave two working codes behind.
+    """
+    db.execute("DELETE FROM password_resets WHERE user_id=?", (user_id,))
+    groups = ["".join(secrets.choice(RESET_ALPHABET) for _ in range(4)) for _ in range(3)]
+    code = "LQ-" + "-".join(groups)
+    now = datetime.now(timezone.utc)
+    db.execute(
+        """INSERT INTO password_resets (code_hash, user_id, created_at, expires_at)
+           VALUES (?,?,?,?)""",
+        (_hash_token(code), user_id,
+         now.strftime("%Y-%m-%d %H:%M:%S"),
+         (now + timedelta(minutes=RESET_MINUTES)).strftime("%Y-%m-%d %H:%M:%S")),
+    )
+    return code
+
+
+def consume_reset_code(username: str, code: str) -> int | None:
+    """Return the user id a live code belongs to, and spend it. None otherwise.
+
+    The username is checked against the code's owner so a code cannot be used
+    against a different account, and the row is marked used in the same call —
+    there is no window in which a caller holds a verified but unspent code.
+    """
+    normalised = (code or "").strip().upper().replace(" ", "")
+    if not normalised:
+        return None
+    row = db.query_one(
+        """SELECT r.user_id, r.expires_at, r.used_at, u.username
+             FROM password_resets r JOIN users u ON u.id = r.user_id
+            WHERE r.code_hash=?""",
+        (_hash_token(normalised),),
+    )
+    if row is None or row["used_at"] is not None:
+        return None
+    if (row["username"] or "").lower() != (username or "").strip().lower():
+        return None
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    if row["expires_at"] < now:
+        return None
+    db.execute("UPDATE password_resets SET used_at=? WHERE code_hash=?",
+               (now, _hash_token(normalised)))
+    return int(row["user_id"])
+
+
+def set_password(user_id: int, password: str) -> None:
+    """Replace a password and cut every session loose.
+
+    Signing the old sessions out is the point of the exercise: someone resetting
+    a password may be doing it because another browser is signed in as them.
+    """
+    password_hash, salt = hash_password(password)
+    db.execute("UPDATE users SET password_hash=?, password_salt=? WHERE id=?",
+               (password_hash, salt, user_id))
+    db.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
+
+
+def purge_expired_resets() -> None:
+    db.execute("DELETE FROM password_resets WHERE expires_at < ?",
+               (datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),))
+
+
 def resolve_session(token: str | None) -> dict | None:
     if not token:
         return None
@@ -177,12 +252,21 @@ SAFE_FILENAME_RE = re.compile(r"[^A-Za-z0-9._-]")
 ALLOWED_UPLOAD_TYPES = {
     "image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp", "image/gif": ".gif",
     "application/pdf": ".pdf", "text/plain": ".txt", "text/markdown": ".md",
+    # Recorded on the spot through the camera. WebM is what Chrome and Firefox
+    # produce from MediaRecorder; Safari produces MP4.
+    "video/webm": ".webm", "video/mp4": ".mp4", "video/quicktime": ".mov",
 }
+VIDEO_TYPES = {"video/webm", "video/mp4", "video/quicktime"}
+
+
+def upload_limit_for(content_type: str) -> int:
+    normalised = (content_type or "").split(";")[0].strip().lower()
+    return config.MAX_VIDEO_BYTES if normalised in VIDEO_TYPES else config.MAX_UPLOAD_BYTES
 
 
 def store_upload(user_id: int, filename: str, content_type: str, data: bytes) -> dict | None:
     """Write an upload to disk under a generated name. Returns metadata or None."""
-    if len(data) > config.MAX_UPLOAD_BYTES:
+    if len(data) > upload_limit_for(content_type):
         return None
     extension = ALLOWED_UPLOAD_TYPES.get((content_type or "").split(";")[0].strip().lower())
     if extension is None:
