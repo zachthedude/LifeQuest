@@ -5,6 +5,13 @@
 const PYODIDE = 'https://cdn.jsdelivr.net/pyodide/v0.27.2/full/';
 const bootText = document.querySelector('.boot__text');
 const say = (text) => { if (bootText) bootText.textContent = text; };
+// Storage can be blocked (private modes, site data off); the demo still runs, it just won't remember.
+const store = {
+  get(key) { try { return localStorage.getItem(key); } catch { return null; } },
+  set(key, value) { try { localStorage.setItem(key, value); } catch { /* not remembered */ } },
+};
+// Each demo on this origin needs its own IndexedDB database: IDBFS names it after the mountpoint.
+const SAVE = '/save-lifequest';
 
 async function boot() {
   say('Loading the game engine…');
@@ -13,8 +20,8 @@ async function boot() {
   await py.loadPackage(['sqlite3', 'hashlib']);
 
   say('Restoring your save…');
-  py.FS.mkdirTree('/save');
-  py.FS.mount(py.FS.filesystems.IDBFS, {}, '/save');
+  py.FS.mkdirTree(SAVE);
+  py.FS.mount(py.FS.filesystems.IDBFS, {}, SAVE);
   await new Promise((resolve) => py.FS.syncfs(true, resolve));
 
   const zip = await (await fetch('server.zip')).arrayBuffer();
@@ -22,7 +29,7 @@ async function boot() {
 
   py.runPython(`
 import os, sys
-os.environ.update(DATABASE_URL='/save/lifequest.db', LIFEQUEST_UPLOAD_DIR='/save/uploads',
+os.environ.update(DATABASE_URL='/save-lifequest/lifequest.db', LIFEQUEST_UPLOAD_DIR='/save-lifequest/uploads',
                   AI_PROVIDER='none', OLLAMA_WARM='0')
 sys.path.insert(0, '/lifequest')
 from server import app, db, security
@@ -39,7 +46,7 @@ def handle(method, path, query, headers, body):
   const handle = py.globals.get('handle');
 
   // The session cookie the server sets is kept here and replayed on every call.
-  let cookie = localStorage.getItem('lq_demo_cookie') || '';
+  let cookie = store.get('lq_demo_cookie') || '';
   let saving = Promise.resolve();
   const realFetch = window.fetch.bind(window);
 
@@ -68,9 +75,13 @@ def handle(method, path, query, headers, body):
     if (setCookie) {
       const pair = setCookie.split(';')[0];
       cookie = /max-age=0|expires=thu, 01 jan 1970/i.test(setCookie) || pair.endsWith('=') ? '' : pair;
-      localStorage.setItem('lq_demo_cookie', cookie);
+      store.set('lq_demo_cookie', cookie);
     }
-    if (method !== 'GET') saving = saving.then(() => new Promise((r) => py.FS.syncfs(false, r)));
+    // Answer only once the write is in IndexedDB, so a reload straight after can't lose it.
+    if (method !== 'GET') {
+      saving = saving.then(() => new Promise((r) => py.FS.syncfs(false, (err) => { if (err) console.error('Demo save failed', err); r(); })));
+      await saving;
+    }
 
     return new Response(status === 204 ? null : resBody, { status, headers: resHeaders });
   };

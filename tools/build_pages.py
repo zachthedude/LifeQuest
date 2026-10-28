@@ -1,12 +1,14 @@
 """Build the static GitHub Pages demo into _site/: the web app plus the Python
 server zipped for Pyodide (see web/js/demo.js)."""
-import shutil, zipfile
+import os, shutil, stat, zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "_site"
 
-shutil.rmtree(OUT, ignore_errors=True)
+if OUT.exists():
+    # _site/.git (from --push) holds read-only objects on Windows; clear the flag and retry.
+    shutil.rmtree(OUT, onexc=lambda fn, path, _: (os.chmod(path, stat.S_IWRITE), fn(path)))
 shutil.copytree(ROOT / "web", OUT)
 with zipfile.ZipFile(OUT / "server.zip", "w", zipfile.ZIP_DEFLATED) as z:
     for f in (ROOT / "server").rglob("*"):
